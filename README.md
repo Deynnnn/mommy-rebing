@@ -8,7 +8,7 @@ Guests scan a QR code, upload photos with a message, and the photos appear live 
 | `/share` | guests (QR code) | Upload photos, name, message |
 | `/slideshow` | TV laptop | Fullscreen live slideshow with a QR code in the corner |
 | `/qr` | print | QR card to place at the venue |
-| `/admin?key=ADMIN_KEY` | family | Hide or unhide photos, download everything as a ZIP |
+| `/admin` | family | Sign in once with `ADMIN_KEY` (stays signed in 30 days). Hide, reorder, portraits, timing, ZIP download |
 
 ## 1. Fill in Lola's details
 - Put her portrait at `public/lola.jpg`.

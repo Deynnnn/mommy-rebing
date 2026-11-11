@@ -2,14 +2,14 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { portraits } from "@/db/schema";
-import { isAdmin } from "@/lib/admin";
+import { isAdminRequest } from "@/lib/admin";
 import { deleteObject } from "@/lib/s3";
 import { storeImage, UploadError } from "@/lib/upload";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  if (!isAdmin(req.headers.get("x-admin-key"))) {
+  if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const form = await req.formData();
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  if (!isAdmin(req.headers.get("x-admin-key"))) {
+  if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const id = new URL(req.url).searchParams.get("id");

@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { isAdmin } from "@/lib/admin";
+import { isAdminRequest } from "@/lib/admin";
 
 export const runtime = "nodejs";
 
@@ -13,7 +13,7 @@ const UUID = /^[0-9a-f-]{36}$/i;
  * which therefore keep arriving at the end of the list.
  */
 export async function POST(req: Request) {
-  if (!isAdmin(req.headers.get("x-admin-key"))) {
+  if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { ids } = (await req.json().catch(() => ({}))) as { ids?: unknown };

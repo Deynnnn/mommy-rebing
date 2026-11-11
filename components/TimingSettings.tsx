@@ -21,7 +21,7 @@ const FIELDS: { key: "slideSeconds" | "portraitSeconds"; label: string; hint: st
 ];
 
 /** Admin section: change how long each image stays on screen. Open screens pick it up within ~15 s. */
-export function TimingSettings({ adminKey }: { adminKey: string }) {
+export function TimingSettings() {
   const [values, setValues] = useState<PublicSettings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState<PublicSettings | null>(null);
   const [status, setStatus] = useState("");
@@ -43,7 +43,7 @@ export function TimingSettings({ adminKey }: { adminKey: string }) {
     try {
       const res = await fetch("/api/admin/settings", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
       if (!res.ok) throw new Error();

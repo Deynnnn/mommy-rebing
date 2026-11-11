@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { PassThrough, Readable } from "node:stream";
 import { getDb } from "@/db";
 import { posts } from "@/db/schema";
-import { isAdmin } from "@/lib/admin";
+import { isAdminRequest } from "@/lib/admin";
 import { getObjectStream } from "@/lib/s3";
 
 export const runtime = "nodejs";
@@ -19,10 +19,9 @@ function safe(s: string | null) {
   return (s || "guest").replace(/[^\p{L}\p{N} _-]/gu, "").trim().slice(0, 40) || "guest";
 }
 
-// Admin key comes as ?key= so the browser can download via a plain link.
+// Uses the login cookie, so the browser can download via a plain link.
 export async function GET(req: Request) {
-  const key = new URL(req.url).searchParams.get("key");
-  if (!isAdmin(key)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isAdminRequest(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rows = await getDb().select().from(posts).orderBy(asc(posts.sortOrder), asc(posts.createdAt));
 

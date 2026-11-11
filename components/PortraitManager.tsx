@@ -5,7 +5,7 @@ import { compressImage } from "@/lib/compress";
 import { tribute } from "@/lib/tribute";
 
 /** Admin section: upload/remove the photos that rotate in Mommy Rebing's profile portrait. */
-export function PortraitManager({ adminKey }: { adminKey: string }) {
+export function PortraitManager() {
   const [ids, setIds] = useState<string[] | null>(null);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
@@ -34,7 +34,6 @@ export function PortraitManager({ adminKey }: { adminKey: string }) {
         fd.append("file", await compressImage(list[i], 1600));
         const res = await fetch("/api/admin/portraits", {
           method: "POST",
-          headers: { "x-admin-key": adminKey },
           body: fd,
         });
         if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error);
@@ -52,7 +51,6 @@ export function PortraitManager({ adminKey }: { adminKey: string }) {
     setIds((cur) => cur?.filter((x) => x !== id) ?? null);
     await fetch(`/api/admin/portraits?id=${encodeURIComponent(id)}`, {
       method: "DELETE",
-      headers: { "x-admin-key": adminKey },
     });
     load();
   }
