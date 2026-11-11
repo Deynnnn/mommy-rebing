@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# In Loving Memory: photo sharing for the last night
 
-## Getting Started
+Guests scan a QR code, upload photos with a message, and the photos appear live on the TV slideshow.
 
-First, run the development server:
+| Page | Who | What |
+|---|---|---|
+| `/` | everyone | Tribute and the gallery of shared photos |
+| `/share` | guests (QR code) | Upload photos, name, message |
+| `/slideshow` | TV laptop | Fullscreen live slideshow with a QR code in the corner |
+| `/qr` | print | QR card to place at the venue |
+| `/admin?key=ADMIN_KEY` | family | Hide or unhide photos, download everything as a ZIP |
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 1. Fill in Lola's details
+- Put her portrait at `public/lola.jpg`.
+- Edit `lib/tribute.ts`: name, nickname, dates, story, and set `portrait: "/lola.jpg"`.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 2. Railway setup
+1. Create a Railway project and add **Postgres** and a **Bucket**.
+2. Copy `.env.example` to `.env.local` and fill it in:
+   - `DATABASE_URL`: Postgres `DATABASE_PUBLIC_URL` (for local), or reference `${{Postgres.DATABASE_URL}}` on Railway.
+   - `S3_*`: from the Bucket's credentials (endpoint, region, bucket name, access key, secret).
+   - `ADMIN_KEY`: any long secret.
+3. Create the table:
+   ```bash
+   npm run db:push
+   ```
+4. Test locally with `npm run dev`. Open http://localhost:3000/share and upload a photo.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 3. Deploy on Railway
+1. Push this folder to GitHub, then in Railway choose **New Service, GitHub repo**. You can also deploy with `railway up` from this folder.
+2. Add the same variables to the service. Use internal references for Postgres and Bucket where Railway offers them.
+3. In **Settings, Networking**, generate a domain. Set `NEXT_PUBLIC_SITE_URL` to it and redeploy, because the QR code uses it at build time.
+4. Open `/qr` and print the card. Open `/slideshow` on the TV laptop and click **Toggle fullscreen**.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Tonight checklist
+- [ ] Upload one test photo from a phone on mobile data and from venue Wi-Fi.
+- [ ] Slideshow running fullscreen, laptop plugged in, sleep disabled.
+- [ ] Admin link saved on a family member's phone.
+- [ ] Backup: a shared Google Photos album, in case the internet fails.
+- [ ] Afterwards: `/admin`, then **Download all (ZIP)**.
