@@ -1,4 +1,4 @@
-import { desc } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { posts } from "@/db/schema";
@@ -11,6 +11,6 @@ export async function GET(req: Request) {
   if (!isAdmin(req.headers.get("x-admin-key"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const rows = await getDb().select().from(posts).orderBy(desc(posts.createdAt));
+  const rows = await getDb().select().from(posts).orderBy(asc(posts.sortOrder), asc(posts.createdAt));
   return NextResponse.json(rows, { headers: { "Cache-Control": "no-store" } });
 }

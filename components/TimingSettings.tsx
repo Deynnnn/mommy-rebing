@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_SETTINGS, type PublicSettings } from "@/lib/settings-shared";
 
-const FIELDS: { key: keyof PublicSettings; label: string; hint: string; min: number; max: number }[] = [
+const FIELDS: { key: "slideSeconds" | "portraitSeconds"; label: string; hint: string; min: number; max: number }[] = [
   {
     key: "slideSeconds",
     label: "TV slideshow",
-    hint: "How long each shared photo stays on the TV before the next one.",
+    hint: "How long each shared photo stays on the TV. Videos always play to the end.",
     min: 3,
     max: 60,
   },
@@ -56,11 +56,11 @@ export function TimingSettings({ adminKey }: { adminKey: string }) {
     }
   }
 
-  const dirty = !saved || FIELDS.some((f) => values[f.key] !== saved[f.key]);
+  const dirty = !saved || JSON.stringify(values) !== JSON.stringify(saved);
 
   return (
     <section className="mt-6 rounded-2xl border border-line bg-paper p-4 sm:p-5">
-      <h2 className="font-serif text-2xl">Slideshow timing</h2>
+      <h2 className="font-serif text-2xl">Slideshow settings</h2>
       <div className="mt-3 grid gap-5 sm:grid-cols-2">
         {FIELDS.map((f) => (
           <label key={f.key} className="block">
@@ -87,13 +87,30 @@ export function TimingSettings({ adminKey }: { adminKey: string }) {
           </label>
         ))}
       </div>
+      <label className="mt-5 flex items-center gap-3">
+        <input
+          type="checkbox"
+          checked={values.videoSound === 1}
+          onChange={(e) => {
+            setValues((v) => ({ ...v, videoSound: e.target.checked ? 1 : 0 }));
+            setStatus("");
+          }}
+          className="h-5 w-5 accent-[#a8874f]"
+        />
+        <span>
+          <span className="font-medium">Play video sound on the TV</span>
+          <span className="block text-xs text-muted">
+            Turn off for a quiet room. The browser needs one click on the slideshow before sound can play.
+          </span>
+        </span>
+      </label>
       <div className="mt-4 flex items-center gap-3">
         <button
           onClick={save}
           disabled={!dirty || status === "Saving…"}
           className="rounded-full bg-ink px-5 py-2 text-sm text-cream disabled:opacity-40"
         >
-          Save timing
+          Save settings
         </button>
         {status && <span className="text-sm text-muted">{status}</span>}
       </div>

@@ -24,18 +24,18 @@ export async function GET(req: Request) {
   const key = new URL(req.url).searchParams.get("key");
   if (!isAdmin(key)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const rows = await getDb().select().from(posts).orderBy(asc(posts.createdAt));
+  const rows = await getDb().select().from(posts).orderBy(asc(posts.sortOrder), asc(posts.createdAt));
 
   const zip = new ZipArchive({ zlib: { level: 0 } });
   const out = new PassThrough();
   zip.pipe(out);
 
   (async () => {
-    const lines = [["#", "file", "name", "message", "uploaded_at", "hidden"].map(csv).join(",")];
+    const lines = [["#", "file", "type", "name", "message", "uploaded_at", "hidden"].map(csv).join(",")];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       const ext = r.imageKey.split(".").pop() || "jpg";
-      const file = `photos/${String(i + 1).padStart(4, "0")}-${safe(r.name)}.${ext}`;
+      const file = `media/${String(i + 1).padStart(4, "0")}-${safe(r.name)}.${ext}`;
       try {
         const body = await getObjectStream(r.imageKey);
         zip.append(body, { name: file, date: r.createdAt });
@@ -44,7 +44,7 @@ export async function GET(req: Request) {
         // skip missing objects
       }
       lines.push(
-        [i + 1, file, r.name, r.message, r.createdAt.toISOString(), r.hidden].map(csv).join(","),
+        [i + 1, file, r.mediaType, r.name, r.message, r.createdAt.toISOString(), r.hidden].map(csv).join(","),
       );
     }
     zip.append("﻿" + lines.join("\r\n"), { name: "messages.csv" });

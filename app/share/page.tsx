@@ -3,17 +3,78 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Candle } from "@/components/Candle";
-import { compressImage as prepare } from "@/lib/compress";
+import { compressImage } from "@/lib/compress";
 import { tribute } from "@/lib/tribute";
 
 type Item = {
   file: File;
+  kind: "image" | "video";
   preview: string;
   status: "waiting" | "uploading" | "done" | "error";
+  progress?: number;
   error?: string;
 };
 
-const OK_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const MAX_VIDEO_MB = 300;
+const MAX_ITEMS = 20;
+const VIDEO_EXT_TYPES: Record<string, string> = {
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  m4v: "video/x-m4v",
+  webm: "video/webm",
+  "3gp": "video/3gpp",
+};
+
+/** Phones sometimes leave file.type empty for videos; fall back to the extension. */
+function videoType(file: File) {
+  if (file.type.startsWith("video/")) return file.type;
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return VIDEO_EXT_TYPES[ext] ?? "";
+}
+
+function kindOf(file: File): Item["kind"] | null {
+  if (videoType(file)) return "video";
+  if (file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name)) return "image";
+  return null;
+}
+
+/** Uploads a video as a raw body so the server can stream it; reports progress 0–1. */
+function uploadVideo(file: File, name: string, message: string, onProgress: (p: number) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const qs = new URLSearchParams();
+    if (name.trim()) qs.set("name", name.trim());
+    if (message.trim()) qs.set("message", message.trim());
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/upload-video?${qs}`);
+    xhr.setRequestHeader("Content-Type", videoType(file));
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
+      let msg = "Upload failed. Please try again.";
+      try {
+        msg = JSON.parse(xhr.responseText).error || msg;
+      } catch {}
+      reject(new Error(msg));
+    };
+    xhr.onerror = () => reject(new Error("Connection lost. Please try again."));
+    xhr.send(file);
+  });
+}
+
+async function uploadImage(file: File, name: string, message: string) {
+  const prepared = await compressImage(file);
+  if (!IMAGE_TYPES.includes(prepared.type)) throw new Error("Format not supported. Try a JPG.");
+  const fd = new FormData();
+  fd.append("file", prepared);
+  fd.append("name", name);
+  fd.append("message", message);
+  const res = await fetch("/api/upload", { method: "POST", body: fd });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(j.error || "Upload failed. Please try again.");
+  }
+}
 
 export default function SharePage() {
   const [name, setName] = useState("");
@@ -21,8 +82,10 @@ export default function SharePage() {
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
+  const [notice, setNotice] = useState("");
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     try {
@@ -33,14 +96,29 @@ export default function SharePage() {
 
   function pick(files: FileList | null) {
     if (!files) return;
-    const next = Array.from(files)
-      .filter((f) => f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name))
-      .map((file) => ({ file, preview: URL.createObjectURL(file), status: "waiting" as const }));
-    setItems((cur) => [...cur, ...next].slice(0, 20));
+    setNotice("");
+    const next: Item[] = [];
+    for (const file of Array.from(files)) {
+      const kind = kindOf(file);
+      if (!kind) continue;
+      if (kind === "video" && file.size > MAX_VIDEO_MB * 1024 * 1024) {
+        setNotice(`A video was skipped because it's over ${MAX_VIDEO_MB} MB. Try a shorter clip.`);
+        continue;
+      }
+      next.push({ file, kind, preview: URL.createObjectURL(file), status: "waiting" });
+    }
+    setItems((cur) => [...cur, ...next].slice(0, MAX_ITEMS));
   }
 
   function remove(i: number) {
-    setItems((cur) => cur.filter((_, j) => j !== i));
+    setItems((cur) => {
+      URL.revokeObjectURL(cur[i].preview);
+      return cur.filter((_, j) => j !== i);
+    });
+  }
+
+  function patch(i: number, p: Partial<Item>) {
+    setItems((cur) => cur.map((it, j) => (j === i ? { ...it, ...p } : it)));
   }
 
   async function submit() {
@@ -53,27 +131,22 @@ export default function SharePage() {
     let failures = 0;
     let messageSent = false;
     for (let i = 0; i < items.length; i++) {
-      if (items[i].status === "done") continue;
-      setItems((cur) => cur.map((it, j) => (j === i ? { ...it, status: "uploading", error: undefined } : it)));
+      const it = items[i];
+      if (it.status === "done") continue;
+      patch(i, { status: "uploading", error: undefined, progress: 0 });
+      // attach the message to the first successful upload only
+      const msg = messageSent ? "" : message;
       try {
-        const file = await prepare(items[i].file);
-        if (!OK_TYPES.includes(file.type)) throw new Error("Format not supported. Try a JPG.");
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("name", name);
-        // attach the message to the first successful photo only
-        if (!messageSent) fd.append("message", message);
-        const res = await fetch("/api/upload", { method: "POST", body: fd });
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          throw new Error(j.error || "Upload failed. Please try again.");
+        if (it.kind === "video") {
+          await uploadVideo(it.file, name, msg, (p) => patch(i, { progress: p }));
+        } else {
+          await uploadImage(it.file, name, msg);
         }
         messageSent = true;
-        setItems((cur) => cur.map((it, j) => (j === i ? { ...it, status: "done" } : it)));
+        patch(i, { status: "done" });
       } catch (e) {
         failures++;
-        const msg = e instanceof Error ? e.message : "Upload failed.";
-        setItems((cur) => cur.map((it, j) => (j === i ? { ...it, status: "error", error: msg } : it)));
+        patch(i, { status: "error", error: e instanceof Error ? e.message : "Upload failed." });
       }
     }
     if (messageSent) setMessage("");
@@ -85,6 +158,7 @@ export default function SharePage() {
     items.forEach((it) => URL.revokeObjectURL(it.preview));
     setItems([]);
     setMessage("");
+    setNotice("");
     setDone(false);
   }
 
@@ -97,7 +171,7 @@ export default function SharePage() {
           Thank you for sharing your memory of {tribute.nickname}. It will appear on the screen shortly.
         </p>
         <button onClick={again} className="mt-8 w-full rounded-full bg-ink px-6 py-4 font-medium text-cream">
-          Share another photo
+          Share another
         </button>
         <Link href="/" className="mt-4 text-sm text-muted underline underline-offset-4">
           See all shared memories
@@ -108,74 +182,81 @@ export default function SharePage() {
 
   const uploaded = items.filter((i) => i.status === "done").length;
   const hasErrors = items.some((i) => i.status === "error");
+  const videos = items.filter((i) => i.kind === "video").length;
+  const photos = items.length - videos;
+  const label = [photos && `${photos} photo${photos > 1 ? "s" : ""}`, videos && `${videos} video${videos > 1 ? "s" : ""}`]
+    .filter(Boolean)
+    .join(" & ");
+
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    pick(e.target.files);
+    e.target.value = "";
+  };
+
+  const tile =
+    "flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gold/50 bg-paper px-3 py-5 text-center disabled:opacity-50";
 
   return (
     <main className="mx-auto min-h-dvh max-w-md px-5 pb-12 pt-8">
       <Link href="/" className="text-sm text-muted">
         ← Back
       </Link>
-      <h1 className="mt-4 font-serif text-3xl leading-tight">Share a photo of {tribute.nickname}</h1>
-      <p className="mt-1 text-sm text-muted">Magbahagi ng larawan at alaala</p>
+      <h1 className="mt-4 font-serif text-3xl leading-tight">Share a memory of {tribute.nickname}</h1>
+      <p className="mt-1 text-sm text-muted">Magbahagi ng larawan, video at alaala</p>
 
-      {/* Phones skip the camera when `multiple` is set, so the camera gets its own input. */}
-      <input
-        ref={cameraRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={(e) => {
-          pick(e.target.files);
-          e.target.value = "";
-        }}
-      />
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          pick(e.target.files);
-          e.target.value = "";
-        }}
-      />
+      {/* Phones skip the camera when `multiple` is set, so camera inputs are separate. */}
+      <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPick} />
+      <input ref={videoRef} type="file" accept="video/*" capture="environment" className="hidden" onChange={onPick} />
+      <input ref={galleryRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={onPick} />
 
       <div className="mt-6 grid grid-cols-2 gap-3">
-        <button
-          type="button"
-          onClick={() => cameraRef.current?.click()}
-          disabled={busy}
-          className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gold/50 bg-paper px-3 py-7 text-center"
-        >
+        <button type="button" onClick={() => photoRef.current?.click()} disabled={busy} className={tile}>
           <span className="text-3xl">📷</span>
           <span className="mt-2 font-medium">Take a photo</span>
-          <span className="mt-1 text-xs text-muted">Kumuha ng larawan</span>
+          <span className="mt-0.5 text-xs text-muted">Kumuha ng larawan</span>
+        </button>
+        <button type="button" onClick={() => videoRef.current?.click()} disabled={busy} className={tile}>
+          <span className="text-3xl">🎥</span>
+          <span className="mt-2 font-medium">Record a video</span>
+          <span className="mt-0.5 text-xs text-muted">Mag-video</span>
         </button>
         <button
           type="button"
-          onClick={() => inputRef.current?.click()}
+          onClick={() => galleryRef.current?.click()}
           disabled={busy}
-          className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gold/50 bg-paper px-3 py-7 text-center"
+          className={`${tile} col-span-2 flex-row gap-3 py-4`}
         >
-          <span className="text-3xl">🖼️</span>
-          <span className="mt-2 font-medium">Choose from gallery</span>
-          <span className="mt-1 text-xs text-muted">Pick several at once</span>
+          <span className="text-2xl">🖼️</span>
+          <span className="text-left">
+            <span className="block font-medium">Choose from gallery</span>
+            <span className="block text-xs text-muted">Photos or videos, several at once</span>
+          </span>
         </button>
       </div>
-      {items.length > 0 && !busy && (
-        <p className="mt-2 text-center text-xs text-muted">You can add more with either button.</p>
-      )}
+      <p className="mt-2 text-center text-xs text-muted">Short videos (under 1 minute) upload fastest.</p>
+      {notice && <p className="mt-2 text-center text-sm text-red-700">{notice}</p>}
 
       {items.length > 0 && (
         <div className="mt-4 grid grid-cols-3 gap-2">
           {items.map((it, i) => (
             <div key={it.preview} className="relative aspect-square overflow-hidden rounded-lg bg-line">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={it.preview} alt="" className="h-full w-full object-cover" />
+              {it.kind === "video" ? (
+                <video src={`${it.preview}#t=0.1`} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={it.preview} alt="" className="h-full w-full object-cover" />
+              )}
+              {it.kind === "video" && it.status === "waiting" && (
+                <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">▶ video</span>
+              )}
               {it.status === "uploading" && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-xs text-white">
-                  Uploading…
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/45 text-xs text-white">
+                  {it.kind === "video" ? `${Math.round((it.progress ?? 0) * 100)}%` : "Uploading…"}
+                  {it.kind === "video" && (
+                    <span className="h-1 w-3/4 overflow-hidden rounded bg-white/30">
+                      <span className="block h-full bg-white" style={{ width: `${(it.progress ?? 0) * 100}%` }} />
+                    </span>
+                  )}
                 </div>
               )}
               {it.status === "done" && (
@@ -190,7 +271,7 @@ export default function SharePage() {
                 <button
                   onClick={() => remove(i)}
                   className="absolute right-1 top-1 h-6 w-6 rounded-full bg-black/60 text-sm leading-6 text-white"
-                  aria-label="Remove photo"
+                  aria-label="Remove"
                 >
                   ×
                 </button>
@@ -232,8 +313,13 @@ export default function SharePage() {
           ? `Sharing… ${uploaded}/${items.length}`
           : hasErrors
             ? "Try again"
-            : `Share ${items.length > 1 ? `${items.length} photos` : "photo"}`}
+            : items.length
+              ? `Share ${label}`
+              : "Share"}
       </button>
+      {busy && videos > 0 && (
+        <p className="mt-2 text-center text-xs text-muted">Please keep this page open until the video finishes.</p>
+      )}
     </main>
   );
 }

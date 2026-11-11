@@ -1,16 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { type AdminPost, GuestUploads } from "@/components/GuestUploads";
 import { PortraitManager } from "@/components/PortraitManager";
 import { TimingSettings } from "@/components/TimingSettings";
-
-type AdminPost = {
-  id: string;
-  createdAt: string;
-  name: string | null;
-  message: string | null;
-  hidden: boolean;
-};
 
 export default function AdminPage() {
   const [key, setKey] = useState("");
@@ -18,6 +11,9 @@ export default function AdminPage() {
   const [posts, setPosts] = useState<AdminPost[] | null>(null);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [orderStatus, setOrderStatus] = useState("");
+  // pause background refreshes while someone is dragging or a new order is being saved
+  const busyRef = useRef(false);
 
   useEffect(() => {
     const k = new URLSearchParams(window.location.search).get("key");
@@ -39,7 +35,8 @@ export default function AdminPage() {
       return;
     }
     setLoadError("");
-    setPosts(await res.json());
+    const list = (await res.json()) as AdminPost[];
+    if (!busyRef.current) setPosts(list);
   }, [key]);
 
   useEffect(() => {
@@ -55,6 +52,26 @@ export default function AdminPage() {
       headers: { "Content-Type": "application/json", "x-admin-key": key },
       body: JSON.stringify({ id: p.id, hidden: !p.hidden }),
     });
+  }
+
+  async function reorder(next: AdminPost[]) {
+    setPosts(next);
+    busyRef.current = true;
+    setOrderStatus("Saving order…");
+    try {
+      const res = await fetch("/api/admin/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": key },
+        body: JSON.stringify({ ids: next.map((p) => p.id) }),
+      });
+      if (!res.ok) throw new Error();
+      setOrderStatus("Order saved. The slideshow uses it on its next round.");
+    } catch {
+      setOrderStatus("Could not save the order. Please try again.");
+    } finally {
+      busyRef.current = false;
+      load();
+    }
   }
 
   if (!key || error) {
@@ -114,30 +131,22 @@ export default function AdminPage() {
       <TimingSettings adminKey={key} />
       <PortraitManager adminKey={key} />
 
-      <h2 className="mt-8 font-serif text-2xl">Guest uploads</h2>
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {posts?.map((p) => (
-          <div
-            key={p.id}
-            className={`overflow-hidden rounded-lg border bg-paper ${p.hidden ? "border-red-300 opacity-50" : "border-line"}`}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`/api/image/${p.id}`} alt="" loading="lazy" className="aspect-square w-full object-cover" />
-            <div className="space-y-1 p-2 text-xs">
-              {p.message && <p className="line-clamp-3 font-serif text-sm">{p.message}</p>}
-              <p className="text-muted">
-                {p.name || "Guest"} · {new Date(p.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
-              </p>
-              <button
-                onClick={() => toggle(p)}
-                className={`w-full rounded-md py-1.5 font-medium ${p.hidden ? "bg-ink text-cream" : "bg-red-50 text-red-700"}`}
-              >
-                {p.hidden ? "Show again" : "Hide"}
-              </button>
-            </div>
-          </div>
-        ))}
+      <div className="mt-8 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="font-serif text-2xl">Guest uploads</h2>
+        <p className="text-xs text-muted">
+          Drag to rearrange. On a phone, press and hold a photo, then drag.
+        </p>
       </div>
+      {orderStatus && <p className="mt-1 text-sm text-muted">{orderStatus}</p>}
+      {posts && posts.length === 0 && <p className="mt-3 text-sm text-muted">No guest uploads yet.</p>}
+      {posts && posts.length > 0 && (
+        <GuestUploads
+          posts={posts}
+          onReorder={reorder}
+          onToggle={toggle}
+          onDragState={(d) => (busyRef.current = d)}
+        />
+      )}
     </main>
   );
 }

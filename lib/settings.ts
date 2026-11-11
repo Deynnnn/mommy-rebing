@@ -1,10 +1,11 @@
 import { getDb } from "@/db";
 import { settings } from "@/db/schema";
 
-/** Timing settings, in seconds. Defaults apply until an admin changes them. */
+/** Slideshow settings (seconds, or 0/1 for on/off). Defaults apply until an admin changes them. */
 export const SETTING_LIMITS = {
   slideSeconds: { min: 3, max: 60, default: 7, label: "TV slideshow: seconds per photo" },
   portraitSeconds: { min: 2, max: 30, default: 5, label: "Her portrait: seconds per photo" },
+  videoSound: { min: 0, max: 1, default: 1, label: "Play video sound on the TV (1 = on)" },
 } as const;
 
 export type SettingKey = keyof typeof SETTING_LIMITS;

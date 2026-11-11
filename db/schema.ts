@@ -1,4 +1,5 @@
-import { boolean, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, doublePrecision, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const posts = pgTable("posts", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -7,6 +8,12 @@ export const posts = pgTable("posts", {
   message: text("message"),
   imageKey: text("image_key").notNull(),
   hidden: boolean("hidden").default(false).notNull(),
+  /** "image" or "video". imageKey holds the bucket key for either. */
+  mediaType: text("media_type").default("image").notNull(),
+  /** Display order (ascending). New uploads get the current epoch ms, so they land at the end. */
+  sortOrder: doublePrecision("sort_order")
+    .default(sql`(extract(epoch from clock_timestamp()) * 1000)`)
+    .notNull(),
 });
 
 export type Post = typeof posts.$inferSelect;

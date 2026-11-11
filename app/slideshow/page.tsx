@@ -10,8 +10,10 @@ import { tribute } from "@/lib/tribute";
 
 const POLL_MS = 8000;
 const TRIBUTE_EVERY = 12;
+/** Skip a video if it makes no progress for this long (broken file, unsupported codec, network). */
+const VIDEO_STALL_MS = 20000;
 
-type Slide = { kind: "tribute"; key: string } | { kind: "photo"; key: string; post: PublicPost };
+type Slide = { kind: "tribute"; key: string } | { kind: "post"; key: string; post: PublicPost };
 
 function shareUrl() {
   const base = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "");
@@ -23,7 +25,10 @@ export default function Slideshow() {
   const [count, setCount] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [url, setUrl] = useState("");
-  const slideMs = useSettings().slideSeconds * 1000;
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  const settings = useSettings();
+  const slideMs = settings.slideSeconds * 1000;
+  const wantSound = settings.videoSound === 1;
 
   const postsRef = useRef<PublicPost[]>([]);
   const seenRef = useRef<Set<string> | null>(null);
@@ -31,9 +36,11 @@ export default function Slideshow() {
   const indexRef = useRef(-1);
   const stepRef = useRef(0);
 
+  const current = slides[slides.length - 1];
+
   useEffect(() => setUrl(shareUrl()), []);
 
-  // Poll for posts; anything new jumps to the front of the queue.
+  // Poll for posts (in the admin's order); anything new jumps to the front of the queue.
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -46,8 +53,7 @@ export default function Slideshow() {
           seenRef.current = ids;
         } else {
           const fresh = list.filter((p) => !seenRef.current!.has(p.id));
-          // newest first in list; show oldest of the new batch first
-          priorityRef.current.push(...fresh.reverse());
+          priorityRef.current.push(...fresh);
           fresh.forEach((p) => seenRef.current!.add(p.id));
         }
         // drop hidden ones from the priority queue
@@ -69,35 +75,50 @@ export default function Slideshow() {
     const posts = postsRef.current;
     if (priorityRef.current.length) {
       const post = priorityRef.current.shift()!;
-      return { kind: "photo", key: `${post.id}-${stepRef.current}`, post };
+      return { kind: "post", key: `${post.id}-${stepRef.current}`, post };
     }
     if (!posts.length || stepRef.current % TRIBUTE_EVERY === 0) {
       return { kind: "tribute", key: `tribute-${stepRef.current}` };
     }
     indexRef.current = (indexRef.current + 1) % posts.length;
     const post = posts[indexRef.current];
-    return { kind: "photo", key: `${post.id}-${stepRef.current}`, post };
+    return { kind: "post", key: `${post.id}-${stepRef.current}`, post };
   }, []);
 
-  // Advance slides and preload the upcoming image.
+  const advance = useCallback(() => {
+    const s = nextSlide();
+    const show = () => setSlides((cur) => [cur[cur.length - 1], s]);
+    if (s.kind === "post" && s.post.mediaType !== "video") {
+      // wait for the photo to load so the crossfade never shows a blank frame
+      const img = new Image();
+      img.src = `/api/image/${s.post.id}`;
+      if (img.complete) show();
+      else img.onload = img.onerror = show;
+    } else {
+      show();
+    }
+  }, [nextSlide]);
+
+  // Photos and tribute slides advance on a timer; videos advance themselves when they end.
+  const isVideo = current.kind === "post" && current.post.mediaType === "video";
   useEffect(() => {
-    const t = setInterval(() => {
-      const s = nextSlide();
-      if (s.kind === "photo") {
-        const img = new Image();
-        img.src = `/api/image/${s.post.id}`;
-        const show = () => setSlides((cur) => [cur[cur.length - 1], s]);
-        if (img.complete) show();
-        else {
-          img.onload = show;
-          img.onerror = show;
-        }
-      } else {
-        setSlides((cur) => [cur[cur.length - 1], s]);
-      }
-    }, slideMs);
-    return () => clearInterval(t);
-  }, [nextSlide, slideMs]);
+    if (isVideo) return;
+    const t = setTimeout(advance, slideMs);
+    return () => clearTimeout(t);
+  }, [current.key, isVideo, slideMs, advance]);
+
+  const currentKeyRef = useRef(current.key);
+  useEffect(() => {
+    currentKeyRef.current = current.key;
+  }, [current.key]);
+
+  const onVideoDone = useCallback(
+    (key: string) => {
+      // ignore late events from a slide that is no longer current
+      if (currentKeyRef.current === key) advance();
+    },
+    [advance],
+  );
 
   // Keep the TV awake and hide the cursor/controls when idle.
   useEffect(() => {
@@ -137,16 +158,33 @@ export default function Slideshow() {
     <main
       className="fixed inset-0 overflow-hidden bg-[#0d0b09] text-white"
       style={{ cursor: showControls ? "default" : "none" }}
+      // any click counts as the user gesture browsers require before playing sound
+      onClick={() => setSoundBlocked(false)}
     >
-      {slides.map((s, i) => (
-        <div
-          key={s.key}
-          className="absolute inset-0"
-          style={i === slides.length - 1 ? { animation: "fadeIn 1.4s ease both" } : undefined}
-        >
-          {s.kind === "photo" ? <PhotoSlide post={s.post} slideMs={slideMs} /> : <TributeSlide />}
-        </div>
-      ))}
+      {slides.map((s, i) => {
+        const active = i === slides.length - 1;
+        return (
+          <div
+            key={s.key}
+            className="absolute inset-0"
+            style={active ? { animation: "fadeIn 1.4s ease both" } : undefined}
+          >
+            {s.kind === "tribute" ? (
+              <TributeSlide />
+            ) : s.post.mediaType === "video" ? (
+              <VideoSlide
+                post={s.post}
+                active={active}
+                sound={wantSound && !soundBlocked}
+                onSoundBlocked={() => setSoundBlocked(true)}
+                onDone={() => onVideoDone(s.key)}
+              />
+            ) : (
+              <PhotoSlide post={s.post} slideMs={slideMs} />
+            )}
+          </div>
+        );
+      })}
 
       {url && (
         <div className="absolute bottom-6 right-6 z-10 flex items-center gap-4 rounded-2xl bg-black/55 p-3 pr-5 backdrop-blur">
@@ -154,21 +192,35 @@ export default function Slideshow() {
             <QRCodeSVG value={url} size={112} />
           </div>
           <div className="max-w-[13rem]">
-            <p className="font-serif text-2xl leading-tight">Scan to share a photo</p>
-            <p className="mt-1 text-sm text-white/70">Magbahagi ng larawan</p>
+            <p className="font-serif text-2xl leading-tight">Scan to share a photo or video</p>
+            <p className="mt-1 text-sm text-white/70">Magbahagi ng larawan o video</p>
             <p className="mt-2 text-xs text-white/50">{count} memories shared</p>
           </div>
         </div>
       )}
 
-      <button
-        onClick={fullscreen}
-        className="absolute left-4 top-4 z-10 rounded-full bg-white/10 px-4 py-2 text-sm transition-opacity"
-        style={{ opacity: showControls ? 1 : 0 }}
+      <div
+        className="absolute left-4 top-4 z-10 flex items-center gap-3 transition-opacity"
+        style={{ opacity: showControls || (wantSound && soundBlocked) ? 1 : 0 }}
       >
-        Toggle fullscreen
-      </button>
+        <button onClick={fullscreen} className="rounded-full bg-white/10 px-4 py-2 text-sm">
+          Toggle fullscreen
+        </button>
+        {wantSound && soundBlocked && (
+          <span className="rounded-full bg-black/60 px-4 py-2 text-sm">🔇 Click anywhere to turn on video sound</span>
+        )}
+      </div>
     </main>
+  );
+}
+
+function Caption({ post }: { post: PublicPost }) {
+  if (!post.message && !post.name) return null;
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-12 pb-8 pt-24 pr-[22rem]">
+      {post.message && <p className="line-clamp-3 font-serif text-4xl leading-snug">“{post.message}”</p>}
+      {post.name && <p className="mt-3 text-xl text-white/75">— {post.name}</p>}
+    </div>
   );
 }
 
@@ -188,12 +240,82 @@ function PhotoSlide({ post, slideMs }: { post: PublicPost; slideMs: number }) {
           style={{ animation: `kenburns ${slideMs + 1500}ms ease-out both` }}
         />
       </div>
-      {(post.message || post.name) && (
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-12 pb-8 pt-24 pr-[22rem]">
-          {post.message && <p className="line-clamp-3 font-serif text-4xl leading-snug">“{post.message}”</p>}
-          {post.name && <p className="mt-3 text-xl text-white/75">— {post.name}</p>}
-        </div>
-      )}
+      <Caption post={post} />
+    </>
+  );
+}
+
+/** Plays a guest video to the end, then calls onDone. Skips it if it errors or stalls. */
+function VideoSlide({
+  post,
+  active,
+  sound,
+  onSoundBlocked,
+  onDone,
+}: {
+  post: PublicPost;
+  active: boolean;
+  sound: boolean;
+  onSoundBlocked: () => void;
+  onDone: () => void;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const doneRef = useRef(false);
+  const finish = useCallback(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    onDone();
+  }, [onDone]);
+
+  // Start (or stop) playback when this slide becomes (or stops being) the current one.
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    if (!active) {
+      v.pause();
+      return;
+    }
+    v.muted = !sound;
+    v.play().catch(() => {
+      // Browsers block sound until someone clicks the page; fall back to muted playback.
+      v.muted = true;
+      if (sound) onSoundBlocked();
+      v.play().catch(finish);
+    });
+  }, [active, sound, onSoundBlocked, finish]);
+
+  // Watchdog: skip if the video makes no progress for a while.
+  useEffect(() => {
+    if (!active) return;
+    const v = ref.current;
+    if (!v) return;
+    let last = -1;
+    let lastChange = Date.now();
+    const t = setInterval(() => {
+      if (v.currentTime !== last) {
+        last = v.currentTime;
+        lastChange = Date.now();
+      } else if (Date.now() - lastChange > VIDEO_STALL_MS) {
+        finish();
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [active, finish]);
+
+  return (
+    <>
+      <div className="absolute inset-0 flex items-center justify-center bg-black p-6 pb-36">
+        <video
+          ref={ref}
+          src={`/api/image/${post.id}`}
+          playsInline
+          preload="auto"
+          onEnded={finish}
+          onError={finish}
+          className="max-h-full max-w-full rounded-md shadow-2xl"
+        />
+      </div>
+      <Caption post={post} />
     </>
   );
 }

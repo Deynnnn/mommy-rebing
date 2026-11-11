@@ -14,9 +14,7 @@ export function useSettings(refreshMs = 15000): PublicSettings {
         const res = await fetch("/api/settings", { cache: "no-store" });
         if (!res.ok || !alive) return;
         const next = (await res.json()) as PublicSettings;
-        setSettings((cur) =>
-          cur.slideSeconds === next.slideSeconds && cur.portraitSeconds === next.portraitSeconds ? cur : next,
-        );
+        setSettings((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next));
       } catch {}
     };
     load();
