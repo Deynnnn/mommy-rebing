@@ -6,10 +6,12 @@ type Track = { id: string; title: string };
 
 const POLL_MS = 30000;
 const FADE_MS = 800;
+/** Music level while a guest video plays (never louder than the admin's own setting). */
+const DUCK_VOLUME = 0.2;
 
 /**
  * Background music for the TV slideshow. Plays the admin's playlist in order (or shuffled) and
- * loops it. `paused` fades it out, e.g. while a guest video with sound is playing.
+ * loops it. `ducked` lowers it to DUCK_VOLUME (e.g. while a guest video plays) and restores it after.
  * Calls onBlocked if the browser refuses to play sound before a click; it retries once
  * `blocked` turns false again.
  */
@@ -17,14 +19,14 @@ export function SlideshowMusic({
   enabled,
   volume,
   shuffle,
-  paused,
+  ducked,
   blocked,
   onBlocked,
 }: {
   enabled: boolean;
   volume: number;
   shuffle: boolean;
-  paused: boolean;
+  ducked: boolean;
   blocked: boolean;
   onBlocked: () => void;
 }) {
@@ -33,11 +35,14 @@ export function SlideshowMusic({
   const indexRef = useRef(-1);
   const failsRef = useRef(0);
   const fadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stateRef = useRef({ enabled, volume, shuffle, paused, blocked, onBlocked });
-  stateRef.current = { enabled, volume, shuffle, paused, blocked, onBlocked };
+  const stateRef = useRef({ enabled, volume, shuffle, ducked, blocked, onBlocked });
+  stateRef.current = { enabled, volume, shuffle, ducked, blocked, onBlocked };
 
-  const target = () => Math.max(0, Math.min(1, stateRef.current.volume / 100));
-  const shouldPlay = () => stateRef.current.enabled && !stateRef.current.paused && tracksRef.current.length > 0;
+  const target = () => {
+    const v = Math.max(0, Math.min(1, stateRef.current.volume / 100));
+    return stateRef.current.ducked ? Math.min(v, DUCK_VOLUME) : v;
+  };
+  const shouldPlay = () => stateRef.current.enabled && tracksRef.current.length > 0;
 
   function fadeTo(to: number, then?: () => void) {
     const a = audioRef.current;
@@ -114,20 +119,20 @@ export function SlideshowMusic({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // React to on/off, pausing for videos, and the click that unblocks sound.
+  // React to on/off and the click that unblocks sound.
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
-    if (enabled && !paused && !blocked) play();
+    if (enabled && !blocked) play();
     else if (!a.paused) fadeTo(0, () => a.pause());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, paused, blocked]);
+  }, [enabled, blocked]);
 
-  // Volume changes from the admin page.
+  // Lower the music while a video plays, restore it afterwards; also follow volume changes.
   useEffect(() => {
     const a = audioRef.current;
-    if (a && !a.paused && !fadeRef.current) a.volume = target();
-  }, [volume]);
+    if (a && !a.paused) fadeTo(target());
+  }, [ducked, volume]);
 
   useEffect(() => () => void (fadeRef.current && clearInterval(fadeRef.current)), []);
 

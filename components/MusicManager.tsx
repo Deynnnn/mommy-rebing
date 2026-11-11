@@ -126,7 +126,7 @@ export function MusicManager() {
         <div>
           <h2 className="font-serif text-2xl">Slideshow music</h2>
           <p className="text-sm text-muted">
-            Plays on the TV in this order, then starts again. It pauses while a guest video with sound is playing.
+            Plays on the TV in this order, then starts again. It drops to 20% volume while a guest video plays.
           </p>
         </div>
         <button
