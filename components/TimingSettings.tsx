@@ -20,6 +20,19 @@ const FIELDS: { key: "slideSeconds" | "portraitSeconds"; label: string; hint: st
   },
 ];
 
+const TOGGLES: { key: "slideshowPublic" | "videoSound"; label: string; hint: string }[] = [
+  {
+    key: "slideshowPublic",
+    label: "Anyone can open the TV slideshow",
+    hint: "When off, /slideshow only works on devices signed in to this admin page (like the TV laptop). The gallery and sharing stay open to everyone.",
+  },
+  {
+    key: "videoSound",
+    label: "Play video sound on the TV",
+    hint: "Turn off for a quiet room. The browser needs one click on the slideshow before sound can play.",
+  },
+];
+
 /** Admin section: change how long each image stays on screen. Open screens pick it up within ~15 s. */
 export function TimingSettings() {
   const [values, setValues] = useState<PublicSettings>(DEFAULT_SETTINGS);
@@ -87,23 +100,23 @@ export function TimingSettings() {
           </label>
         ))}
       </div>
-      <label className="mt-5 flex items-center gap-3">
-        <input
-          type="checkbox"
-          checked={values.videoSound === 1}
-          onChange={(e) => {
-            setValues((v) => ({ ...v, videoSound: e.target.checked ? 1 : 0 }));
-            setStatus("");
-          }}
-          className="h-5 w-5 accent-[#a8874f]"
-        />
-        <span>
-          <span className="font-medium">Play video sound on the TV</span>
-          <span className="block text-xs text-muted">
-            Turn off for a quiet room. The browser needs one click on the slideshow before sound can play.
+      {TOGGLES.map((t) => (
+        <label key={t.key} className="mt-5 flex items-center gap-3">
+          <input
+            type="checkbox"
+            checked={values[t.key] === 1}
+            onChange={(e) => {
+              setValues((v) => ({ ...v, [t.key]: e.target.checked ? 1 : 0 }));
+              setStatus("");
+            }}
+            className="h-5 w-5 shrink-0 accent-[#a8874f]"
+          />
+          <span>
+            <span className="font-medium">{t.label}</span>
+            <span className="block text-xs text-muted">{t.hint}</span>
           </span>
-        </span>
-      </label>
+        </label>
+      ))}
       <div className="mt-4 flex items-center gap-3">
         <button
           onClick={save}

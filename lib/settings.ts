@@ -6,6 +6,7 @@ export const SETTING_LIMITS = {
   slideSeconds: { min: 3, max: 60, default: 7, label: "TV slideshow: seconds per photo" },
   portraitSeconds: { min: 2, max: 30, default: 5, label: "Her portrait: seconds per photo" },
   videoSound: { min: 0, max: 1, default: 1, label: "Play video sound on the TV (1 = on)" },
+  slideshowPublic: { min: 0, max: 1, default: 1, label: "Anyone can open /slideshow (1 = yes)" },
 } as const;
 
 export type SettingKey = keyof typeof SETTING_LIMITS;

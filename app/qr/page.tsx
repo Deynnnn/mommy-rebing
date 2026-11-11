@@ -3,6 +3,7 @@
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useState } from "react";
 import { Candle } from "@/components/Candle";
+import { StoryShare } from "@/components/StoryShare";
 import { tribute } from "@/lib/tribute";
 
 export default function QrCard() {
@@ -26,12 +27,8 @@ export default function QrCard() {
         <p className="mt-4 text-sm text-muted">Open your phone camera and point it at the code</p>
         <p className="mt-2 break-all text-xs text-muted">{url}</p>
       </div>
-      <button
-        onClick={() => window.print()}
-        className="no-print mt-8 rounded-full bg-ink px-6 py-3 text-cream"
-      >
-        Print this card
-      </button>
+      {/* Print button hidden for now; bring it back with: onClick={() => window.print()} */}
+      {url && <StoryShare url={url} />}
     </main>
   );
 }

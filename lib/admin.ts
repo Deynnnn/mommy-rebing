@@ -36,10 +36,14 @@ function readCookie(req: Request, name: string) {
   return null;
 }
 
+/** True if `value` is a valid login-cookie value. */
+export function isValidSession(value: string | null | undefined) {
+  const token = sessionToken();
+  return !!token && !!value && safeEqual(value, token);
+}
+
 /** Admin if the request has a valid login cookie, or the key in an `x-admin-key` header. */
 export function isAdminRequest(req: Request) {
   if (isAdmin(req.headers.get("x-admin-key"))) return true;
-  const token = sessionToken();
-  const cookie = readCookie(req, SESSION_COOKIE);
-  return !!token && !!cookie && safeEqual(cookie, token);
+  return isValidSession(readCookie(req, SESSION_COOKIE));
 }
