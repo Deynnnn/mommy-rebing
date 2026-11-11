@@ -18,6 +18,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { Checkbox } from "@/components/Checkbox";
 import type { MediaType } from "@/lib/types";
 
 export type AdminPost = {
@@ -37,11 +38,17 @@ export function GuestUploads({
   posts,
   onReorder,
   onToggle,
+  onDelete,
+  selected,
+  onSelect,
   onDragState,
 }: {
   posts: AdminPost[];
   onReorder: (next: AdminPost[]) => void;
   onToggle: (p: AdminPost) => void;
+  onDelete: (p: AdminPost) => void;
+  selected: Set<string>;
+  onSelect: (id: string) => void;
   onDragState: (dragging: boolean) => void;
 }) {
   const sensors = useSensors(
@@ -71,7 +78,15 @@ export function GuestUploads({
       <SortableContext items={posts.map((p) => p.id)} strategy={rectSortingStrategy}>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {posts.map((p, i) => (
-            <Card key={p.id} post={p} position={i + 1} onToggle={onToggle} />
+            <Card
+              key={p.id}
+              post={p}
+              position={i + 1}
+              selected={selected.has(p.id)}
+              onSelect={onSelect}
+              onToggle={onToggle}
+              onDelete={onDelete}
+            />
           ))}
         </div>
       </SortableContext>
@@ -79,7 +94,29 @@ export function GuestUploads({
   );
 }
 
-function Card({ post: p, position, onToggle }: { post: AdminPost; position: number; onToggle: (p: AdminPost) => void }) {
+/** Stops taps and clicks on a control from starting a drag. */
+const noDrag = {
+  onPointerDown: (e: React.SyntheticEvent) => e.stopPropagation(),
+  onTouchStart: (e: React.SyntheticEvent) => e.stopPropagation(),
+  onMouseDown: (e: React.SyntheticEvent) => e.stopPropagation(),
+  onKeyDown: (e: React.SyntheticEvent) => e.stopPropagation(),
+};
+
+function Card({
+  post: p,
+  position,
+  selected,
+  onSelect,
+  onToggle,
+  onDelete,
+}: {
+  post: AdminPost;
+  position: number;
+  selected: boolean;
+  onSelect: (id: string) => void;
+  onToggle: (p: AdminPost) => void;
+  onDelete: (p: AdminPost) => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: p.id });
 
   return (
@@ -87,8 +124,8 @@ function Card({ post: p, position, onToggle }: { post: AdminPost; position: numb
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 20 : undefined }}
       className={`touch-manipulation select-none overflow-hidden rounded-lg border bg-paper ${
-        p.hidden ? "border-red-300 opacity-50" : "border-line"
-      } ${isDragging ? "scale-[1.03] shadow-xl ring-2 ring-gold" : ""}`}
+        selected ? "border-gold ring-2 ring-gold" : p.hidden ? "border-red-300" : "border-line"
+      } ${p.hidden && !selected ? "opacity-50" : ""} ${isDragging ? "scale-[1.03] shadow-xl ring-2 ring-gold" : ""}`}
       {...attributes}
       {...listeners}
     >
@@ -111,9 +148,17 @@ function Card({ post: p, position, onToggle }: { post: AdminPost; position: numb
             className="pointer-events-none aspect-square w-full object-cover"
           />
         )}
-        <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-medium text-white">
-          #{position}
-        </span>
+        {/* dim the photo slightly when selected so the tick stands out */}
+        {selected && <div className="pointer-events-none absolute inset-0 bg-gold/15" />}
+        <div {...noDrag} className="absolute left-2 top-2 flex items-center gap-1.5">
+          <Checkbox
+            variant="overlay"
+            checked={selected}
+            onChange={() => onSelect(p.id)}
+            label={`Select upload #${position}`}
+          />
+          <span className="rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white">#{position}</span>
+        </div>
         {p.mediaType === "video" && (
           <span className="absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">▶ video</span>
         )}
@@ -126,17 +171,24 @@ function Card({ post: p, position, onToggle }: { post: AdminPost; position: numb
         <p className="text-muted">
           {p.name || "Guest"} · {new Date(p.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
         </p>
-        <button
-          // keep taps on the button from starting a drag
-          onPointerDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-          onClick={() => onToggle(p)}
-          className={`w-full rounded-md py-1.5 font-medium ${p.hidden ? "bg-ink text-cream" : "bg-red-50 text-red-700"}`}
-        >
-          {p.hidden ? "Show again" : "Hide"}
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            {...noDrag}
+            onClick={() => onToggle(p)}
+            className={`flex-1 rounded-md py-1.5 font-medium ${p.hidden ? "bg-ink text-cream" : "bg-line/60 text-ink"}`}
+          >
+            {p.hidden ? "Show again" : "Hide"}
+          </button>
+          <button
+            {...noDrag}
+            onClick={() => onDelete(p)}
+            aria-label="Delete upload"
+            title="Delete permanently"
+            className="rounded-md bg-red-50 px-2.5 py-1.5 font-medium text-red-700 hover:bg-red-100"
+          >
+            Delete
+          </button>
+        </div>
       </div>
     </div>
   );
