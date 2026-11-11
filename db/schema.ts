@@ -27,6 +27,19 @@ export const portraits = pgTable("portraits", {
 
 export type Portrait = typeof portraits.$inferSelect;
 
+// Background music for the TV slideshow, uploaded by admins; plays in sortOrder.
+export const tracks = pgTable("tracks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  title: text("title").notNull(),
+  audioKey: text("audio_key").notNull(),
+  sortOrder: doublePrecision("sort_order")
+    .default(sql`(extract(epoch from clock_timestamp()) * 1000)`)
+    .notNull(),
+});
+
+export type Track = typeof tracks.$inferSelect;
+
 // Admin-editable key/value settings (e.g. slideshow timing).
 export const settings = pgTable("settings", {
   key: text("key").primaryKey(),

@@ -42,33 +42,70 @@ const VIDEO_TYPES: Record<string, string> = {
   "video/3gpp": "3gp",
 };
 
+type StreamKind = { folder: string; types: Record<string, string>; max: number; noun: string; typeHint: string };
+
+const VIDEO_KIND: StreamKind = {
+  folder: "videos",
+  types: VIDEO_TYPES,
+  max: MAX_VIDEO_BYTES,
+  noun: "Video",
+  typeHint: "Please upload an MP4, MOV or WebM video.",
+};
+
+export const MAX_AUDIO_BYTES = 60 * 1024 * 1024;
+export const AUDIO_TYPES: Record<string, string> = {
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/m4a": "m4a",
+  "audio/aac": "aac",
+  "audio/ogg": "ogg",
+  "audio/webm": "webm",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/wave": "wav",
+  "audio/flac": "flac",
+  "audio/x-flac": "flac",
+};
+
+const AUDIO_KIND: StreamKind = {
+  folder: "music",
+  types: AUDIO_TYPES,
+  max: MAX_AUDIO_BYTES,
+  noun: "Song",
+  typeHint: "Please upload an MP3, M4A, AAC, OGG, WAV or FLAC file.",
+};
+
 /**
- * Streams a raw request body (a video file) to the bucket without holding it in memory.
- * Aborts if the body grows past MAX_VIDEO_BYTES or the client disconnects.
+ * Streams a raw request body (a file) to the bucket without holding it in memory.
+ * Aborts if the body grows past the size limit or the client disconnects.
  */
-export async function storeVideoStream(
+async function storeStream(
   body: ReadableStream<Uint8Array> | null,
   contentType: string,
   length: number,
+  kind: StreamKind,
 ) {
   const type = contentType.split(";")[0].trim().toLowerCase();
-  const ext = VIDEO_TYPES[type];
-  if (!ext) throw new UploadError("Please upload an MP4, MOV or WebM video.", 415);
-  if (!body) throw new UploadError("No video received.", 400);
-  if (length > MAX_VIDEO_BYTES) throw new UploadError("Video is too large (max 300 MB). Try a shorter clip.", 413);
+  const ext = kind.types[type];
+  const mb = Math.round(kind.max / 1024 / 1024);
+  if (!ext) throw new UploadError(kind.typeHint, 415);
+  if (!body) throw new UploadError(`No ${kind.noun.toLowerCase()} received.`, 400);
+  if (length > kind.max) throw new UploadError(`${kind.noun} is too large (max ${mb} MB).`, 413);
 
   let seen = 0;
   const limiter = new Transform({
     transform(chunk: Buffer, _enc, cb) {
       seen += chunk.length;
-      if (seen > MAX_VIDEO_BYTES) cb(new UploadError("Video is too large (max 300 MB).", 413));
+      if (seen > kind.max) cb(new UploadError(`${kind.noun} is too large (max ${mb} MB).`, 413));
       else cb(null, chunk);
     },
   });
-  // pipeline() tears down both streams if either side fails (e.g. the guest's connection drops).
+  // pipeline() tears down both streams if either side fails (e.g. the connection drops).
   const stream = pipeline(Readable.fromWeb(body as NodeWebStream<Uint8Array>), limiter, () => {});
 
-  const key = datedKey("videos", ext);
+  const key = datedKey(kind.folder, ext);
   const upload = new Upload({
     client: getS3(),
     params: { Bucket: bucket(), Key: key, Body: stream, ContentType: type },
@@ -83,7 +120,22 @@ export async function storeVideoStream(
   }
   if (seen === 0) {
     await deleteObject(key).catch(() => {});
-    throw new UploadError("No video received.", 400);
+    throw new UploadError(`No ${kind.noun.toLowerCase()} received.`, 400);
   }
   return key;
+}
+
+export async function storeVideoStream(body: ReadableStream<Uint8Array> | null, contentType: string, length: number) {
+  try {
+    return await storeStream(body, contentType, length, VIDEO_KIND);
+  } catch (e) {
+    if (e instanceof UploadError && e.status === 413) {
+      throw new UploadError("Video is too large (max 300 MB). Try a shorter clip.", 413);
+    }
+    throw e;
+  }
+}
+
+export function storeAudioStream(body: ReadableStream<Uint8Array> | null, contentType: string, length: number) {
+  return storeStream(body, contentType, length, AUDIO_KIND);
 }

@@ -20,7 +20,7 @@ const FIELDS: { key: "slideSeconds" | "portraitSeconds"; label: string; hint: st
   },
 ];
 
-const TOGGLES: { key: "slideshowPublic" | "videoSound"; label: string; hint: string }[] = [
+const TOGGLES: { key: "slideshowPublic" | "videoSound" | "music" | "musicShuffle"; label: string; hint: string }[] = [
   {
     key: "slideshowPublic",
     label: "Anyone can open the TV slideshow",
@@ -30,6 +30,16 @@ const TOGGLES: { key: "slideshowPublic" | "videoSound"; label: string; hint: str
     key: "videoSound",
     label: "Play video sound on the TV",
     hint: "Turn off for a quiet room. The browser needs one click on the slideshow before sound can play.",
+  },
+  {
+    key: "music",
+    label: "Play background music on the TV",
+    hint: "Plays the songs in “Slideshow music” below. Like video sound, it needs one click on the slideshow to start.",
+  },
+  {
+    key: "musicShuffle",
+    label: "Shuffle the music",
+    hint: "Off plays the songs in the order you set.",
   },
 ];
 
@@ -117,6 +127,25 @@ export function TimingSettings() {
           </span>
         </label>
       ))}
+      <label className="mt-5 block">
+        <span className="flex items-baseline justify-between">
+          <span className="font-medium">Music volume</span>
+          <span className="font-serif text-xl">{values.musicVolume}%</span>
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={values.musicVolume}
+          onChange={(e) => {
+            setValues((v) => ({ ...v, musicVolume: Number(e.target.value) }));
+            setStatus("");
+          }}
+          className="mt-2 w-full accent-[#a8874f]"
+        />
+        <span className="mt-1 block text-xs text-muted">Keep it low so people can still talk and pray.</span>
+      </label>
       <div className="mt-4 flex items-center gap-3">
         <button
           onClick={save}

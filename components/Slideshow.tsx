@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Candle } from "@/components/Candle";
 import { PortraitRotator } from "@/components/PortraitRotator";
 import { SlideshowLocked } from "@/components/SlideshowLocked";
+import { SlideshowMusic } from "@/components/SlideshowMusic";
 import { useSettings } from "@/components/useSettings";
 import type { PublicPost } from "@/lib/types";
 import { tribute } from "@/lib/tribute";
@@ -30,6 +31,8 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
   const settings = useSettings();
   const slideMs = settings.slideSeconds * 1000;
   const wantSound = settings.videoSound === 1;
+  const wantMusic = settings.music === 1;
+  const onSoundBlocked = useCallback(() => setSoundBlocked(true), []);
 
   const postsRef = useRef<PublicPost[]>([]);
   const seenRef = useRef<Set<string> | null>(null);
@@ -180,7 +183,7 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
                 post={s.post}
                 active={active}
                 sound={wantSound && !soundBlocked}
-                onSoundBlocked={() => setSoundBlocked(true)}
+                onSoundBlocked={onSoundBlocked}
                 onDone={() => onVideoDone(s.key)}
               />
             ) : (
@@ -189,6 +192,16 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
           </div>
         );
       })}
+
+      <SlideshowMusic
+        enabled={wantMusic}
+        volume={settings.musicVolume}
+        shuffle={settings.musicShuffle === 1}
+        // let a guest video's own sound take over while it plays
+        paused={isVideo && wantSound}
+        blocked={soundBlocked}
+        onBlocked={onSoundBlocked}
+      />
 
       {url && (
         <div className="absolute bottom-6 right-6 z-10 flex items-center gap-4 rounded-2xl bg-black/55 p-3 pr-5 backdrop-blur">
@@ -205,13 +218,13 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
 
       <div
         className="absolute left-4 top-4 z-10 flex items-center gap-3 transition-opacity"
-        style={{ opacity: showControls || (wantSound && soundBlocked) ? 1 : 0 }}
+        style={{ opacity: showControls || soundBlocked ? 1 : 0 }}
       >
         <button onClick={fullscreen} className="rounded-full bg-white/10 px-4 py-2 text-sm">
           Toggle fullscreen
         </button>
-        {wantSound && soundBlocked && (
-          <span className="rounded-full bg-black/60 px-4 py-2 text-sm">🔇 Click anywhere to turn on video sound</span>
+        {soundBlocked && (wantSound || wantMusic) && (
+          <span className="rounded-full bg-black/60 px-4 py-2 text-sm">🔇 Click anywhere to turn on sound</span>
         )}
       </div>
     </main>
