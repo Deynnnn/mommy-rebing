@@ -38,6 +38,7 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
   const postsRef = useRef<PublicPost[]>([]);
   const seenRef = useRef<Set<string> | null>(null);
   const priorityRef = useRef<PublicPost[]>([]);
+  const skipOnceRef = useRef(new Set<string>());
   const indexRef = useRef(-1);
   const stepRef = useRef(0);
 
@@ -80,13 +81,22 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
     const posts = postsRef.current;
     if (priorityRef.current.length) {
       const post = priorityRef.current.shift()!;
+      // it was just shown as new, so the regular rotation skips it once (otherwise it looks duplicated)
+      skipOnceRef.current.add(post.id);
       return { kind: "post", key: `${post.id}-${stepRef.current}`, post };
     }
     if (!posts.length || stepRef.current % TRIBUTE_EVERY === 0) {
       return { kind: "tribute", key: `tribute-${stepRef.current}` };
     }
-    indexRef.current = (indexRef.current + 1) % posts.length;
-    const post = posts[indexRef.current];
+    let post: PublicPost | undefined;
+    for (let tries = 0; tries < posts.length; tries++) {
+      indexRef.current = (indexRef.current + 1) % posts.length;
+      const candidate = posts[indexRef.current];
+      if (skipOnceRef.current.delete(candidate.id) && posts.length > 1) continue;
+      post = candidate;
+      break;
+    }
+    post ??= posts[indexRef.current];
     return { kind: "post", key: `${post.id}-${stepRef.current}`, post };
   }, []);
 
@@ -239,7 +249,7 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
         enabled={wantMusic}
         volume={settings.musicVolume}
         shuffle={settings.musicShuffle === 1}
-        // turn the music down to 20% while a guest video plays, back up when it ends
+        // turn the music down to 10% while a guest video plays, back up when it ends
         ducked={isVideo}
         blocked={soundBlocked}
         onBlocked={onSoundBlocked}

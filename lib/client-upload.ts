@@ -29,7 +29,18 @@ export function kindOf(file: File): "image" | "video" | null {
 }
 
 /** Uploads a video as a raw body so the server can stream it; reports progress 0–1. */
-export function uploadVideo(file: File, name: string, message: string, onProgress: (p: number) => void) {
+/** A one-time id per file; reuse it when retrying the same file so the server saves it only once. */
+export function newUploadId() {
+  return crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+export function uploadVideo(
+  file: File,
+  name: string,
+  message: string,
+  onProgress: (p: number) => void,
+  uploadId: string,
+) {
   return new Promise<void>((resolve, reject) => {
     const qs = new URLSearchParams();
     if (name.trim()) qs.set("name", name.trim());
@@ -37,6 +48,7 @@ export function uploadVideo(file: File, name: string, message: string, onProgres
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/upload-video?${qs}`);
     xhr.setRequestHeader("Content-Type", videoType(file));
+    xhr.setRequestHeader("x-upload-id", uploadId);
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) return resolve();
@@ -51,13 +63,14 @@ export function uploadVideo(file: File, name: string, message: string, onProgres
   });
 }
 
-export async function uploadImage(file: File, name: string, message: string) {
+export async function uploadImage(file: File, name: string, message: string, uploadId: string) {
   const prepared = await compressImage(file);
   if (!IMAGE_TYPES.includes(prepared.type)) throw new Error("Format not supported. Try a JPG.");
   const fd = new FormData();
   fd.append("file", prepared);
   fd.append("name", name);
   fd.append("message", message);
+  fd.append("uploadId", uploadId);
   const res = await fetch("/api/upload", { method: "POST", body: fd });
   if (!res.ok) {
     const j = await res.json().catch(() => ({}));

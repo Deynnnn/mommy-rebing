@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { DialogProvider } from "@/components/Dialog";
 
 const MENU = [
   { href: "/admin", label: "Guest uploads" },
@@ -143,7 +144,7 @@ export function AdminShell({
         })}
       </nav>
 
-      {children(onUnauthorized)}
+      <DialogProvider>{children(onUnauthorized)}</DialogProvider>
     </main>
   );
 }

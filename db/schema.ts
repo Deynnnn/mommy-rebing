@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
-import { boolean, doublePrecision, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
-export const posts = pgTable("posts", {
+export const posts = pgTable(
+  "posts",
+  {
   id: uuid("id").primaryKey().defaultRandom(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   name: text("name"),
@@ -14,7 +16,11 @@ export const posts = pgTable("posts", {
   sortOrder: doublePrecision("sort_order")
     .default(sql`(extract(epoch from clock_timestamp()) * 1000)`)
     .notNull(),
-});
+  /** One-time id the browser sends with each file, so a double tap or a retry can't save it twice. */
+  uploadId: text("upload_id"),
+  },
+  (t) => [uniqueIndex("posts_upload_id_key").on(t.uploadId)],
+);
 
 export type Post = typeof posts.$inferSelect;
 

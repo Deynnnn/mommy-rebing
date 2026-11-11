@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useDialog } from "@/components/Dialog";
 
 type Track = { id: string; title: string };
 
@@ -52,6 +53,7 @@ export function MusicManager() {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialog = useDialog();
 
   const load = useCallback(async () => {
     try {
@@ -87,14 +89,25 @@ export function MusicManager() {
   }
 
   async function remove(t: Track) {
-    if (!confirm(`Remove “${t.title}” from the slideshow music?`)) return;
+    const ok = await dialog.confirm({
+      title: "Remove this song?",
+      message: `“${t.title}” will be removed from the slideshow music.`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
     setTracks((cur) => cur?.filter((x) => x.id !== t.id) ?? null);
     await fetch(`/api/admin/music?id=${encodeURIComponent(t.id)}`, { method: "DELETE" });
     load();
   }
 
   async function rename(t: Track) {
-    const title = prompt("Song name", t.title)?.trim();
+    const title = await dialog.prompt({
+      title: "Rename song",
+      label: "Song name",
+      defaultValue: t.title,
+      confirmLabel: "Save",
+    });
     if (!title || title === t.title) return;
     setTracks((cur) => cur?.map((x) => (x.id === t.id ? { ...x, title } : x)) ?? null);
     await fetch("/api/admin/music", {
@@ -126,7 +139,7 @@ export function MusicManager() {
         <div>
           <h2 className="font-serif text-2xl">Slideshow music</h2>
           <p className="text-sm text-muted">
-            Plays on the TV in this order, then starts again. It drops to 20% volume while a guest video plays.
+            Plays on the TV in this order, then starts again. It drops to 10% volume while a guest video plays.
           </p>
         </div>
         <button

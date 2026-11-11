@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AdminShell } from "@/components/AdminShell";
 import { AdminUploader } from "@/components/AdminUploader";
 import { Checkbox } from "@/components/Checkbox";
+import { useDialog } from "@/components/Dialog";
 import { type AdminPost, GuestUploads } from "@/components/GuestUploads";
 import { PortraitManager } from "@/components/PortraitManager";
 
@@ -17,6 +18,7 @@ function Uploads({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [orderStatus, setOrderStatus] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const dialog = useDialog();
   // pause background refreshes while someone is dragging or a new order is being saved
   const busyRef = useRef(false);
 
@@ -69,7 +71,13 @@ function Uploads({ onUnauthorized }: { onUnauthorized: () => void }) {
   async function remove(ids: string[]) {
     const n = ids.length;
     if (!n) return;
-    if (!confirm(`Permanently delete ${n === 1 ? "this upload" : `${n} uploads`}? This can't be undone.`)) return;
+    const ok = await dialog.confirm({
+      title: n === 1 ? "Delete this upload?" : `Delete ${n} uploads?`,
+      message: `${n === 1 ? "It" : "They"} will be removed from the gallery, the slideshow and storage. This can't be undone. To keep ${n === 1 ? "it" : "them"} but stop showing ${n === 1 ? "it" : "them"}, use Hide instead.`,
+      confirmLabel: n === 1 ? "Delete" : `Delete ${n}`,
+      danger: true,
+    });
+    if (!ok) return;
     setBulkBusy(true);
     busyRef.current = true;
     try {

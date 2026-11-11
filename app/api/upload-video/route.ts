@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { posts } from "@/db/schema";
+import { cleanUploadId, findByUploadId } from "@/lib/dedupe";
+import { deleteObject } from "@/lib/s3";
 import { storeVideoStream, UploadError } from "@/lib/upload";
 
 export const runtime = "nodejs";
@@ -17,6 +19,14 @@ function clean(v: string | null, max: number) {
  */
 export async function POST(req: Request) {
   const url = new URL(req.url);
+  const uploadId = cleanUploadId(req.headers.get("x-upload-id"));
+  // already saved (a retry after the response was lost): don't store the video again
+  const existing = await findByUploadId(uploadId);
+  if (existing) {
+    req.body?.cancel().catch(() => {});
+    return NextResponse.json({ id: existing.id, duplicate: true });
+  }
+
   let key: string;
   try {
     key = await storeVideoStream(
@@ -37,8 +47,15 @@ export async function POST(req: Request) {
       mediaType: "video",
       name: clean(url.searchParams.get("name"), 80),
       message: clean(url.searchParams.get("message"), 500),
+      uploadId,
     })
+    .onConflictDoNothing({ target: posts.uploadId })
     .returning({ id: posts.id });
 
+  if (!row) {
+    await deleteObject(key).catch(() => {});
+    const dup = await findByUploadId(uploadId);
+    return NextResponse.json({ id: dup?.id, duplicate: true });
+  }
   return NextResponse.json({ id: row.id });
 }

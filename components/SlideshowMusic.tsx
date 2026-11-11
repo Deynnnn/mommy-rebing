@@ -7,7 +7,7 @@ type Track = { id: string; title: string };
 const POLL_MS = 30000;
 const FADE_MS = 800;
 /** Music level while a guest video plays (never louder than the admin's own setting). */
-const DUCK_VOLUME = 0.2;
+const DUCK_VOLUME = 0.1;
 
 /**
  * Background music for the TV slideshow. Plays the admin's playlist in order (or shuffled) and

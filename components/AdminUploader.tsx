@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { kindOf, MAX_VIDEO_MB, uploadImage, uploadVideo } from "@/lib/client-upload";
+import { kindOf, MAX_VIDEO_MB, newUploadId, uploadImage, uploadVideo } from "@/lib/client-upload";
 
 /**
  * Admin bulk upload: pick many photos and videos at once; they are added as uploads
@@ -14,9 +14,11 @@ export function AdminUploader({ onUploaded }: { onUploaded: () => void }) {
   const [status, setStatus] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [pct, setPct] = useState(0);
+  const sendingRef = useRef(false);
 
   async function upload(files: FileList | null) {
-    if (!files?.length || busy) return;
+    if (!files?.length || busy || sendingRef.current) return;
+    sendingRef.current = true;
     const list = Array.from(files);
     const errs: string[] = [];
     const queue = list.filter((f) => {
@@ -31,13 +33,14 @@ export function AdminUploader({ onUploaded }: { onUploaded: () => void }) {
     let ok = 0;
     for (let i = 0; i < queue.length; i++) {
       const f = queue[i];
+      const uploadId = newUploadId();
       setPct(i / queue.length);
       setStatus(`Uploading ${i + 1} of ${queue.length}: ${f.name}`);
       try {
         if (kindOf(f) === "video") {
-          await uploadVideo(f, name, "", (p) => setPct((i + p) / queue.length));
+          await uploadVideo(f, name, "", (p) => setPct((i + p) / queue.length), uploadId);
         } else {
-          await uploadImage(f, name, "");
+          await uploadImage(f, name, "", uploadId);
         }
         ok++;
         // refresh the list every few files so progress shows up below
@@ -47,6 +50,7 @@ export function AdminUploader({ onUploaded }: { onUploaded: () => void }) {
       }
     }
     setPct(1);
+    sendingRef.current = false;
     setBusy(false);
     setErrors(errs);
     setStatus(`${ok} of ${list.length} uploaded.`);

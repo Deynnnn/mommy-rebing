@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useDialog } from "@/components/Dialog";
 import { compressImage } from "@/lib/compress";
 import { tribute } from "@/lib/tribute";
 
@@ -10,6 +11,7 @@ export function PortraitManager() {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialog = useDialog();
 
   const load = useCallback(async () => {
     try {
@@ -47,7 +49,13 @@ export function PortraitManager() {
   }
 
   async function remove(id: string) {
-    if (!confirm("Remove this photo from the portrait slideshow?")) return;
+    const ok = await dialog.confirm({
+      title: "Remove this photo?",
+      message: `It will no longer appear in ${tribute.nickname}'s portrait on the tribute page and the TV.`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
     setIds((cur) => cur?.filter((x) => x !== id) ?? null);
     await fetch(`/api/admin/portraits?id=${encodeURIComponent(id)}`, {
       method: "DELETE",

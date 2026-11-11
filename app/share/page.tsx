@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Candle } from "@/components/Candle";
-import { kindOf, MAX_VIDEO_MB, uploadImage, uploadVideo } from "@/lib/client-upload";
+import { kindOf, MAX_VIDEO_MB, newUploadId, uploadImage, uploadVideo } from "@/lib/client-upload";
 import { tribute } from "@/lib/tribute";
 
 type Item = {
   file: File;
   kind: "image" | "video";
   preview: string;
+  /** stays the same on "Try again", so a file that did arrive isn't saved twice */
+  uploadId: string;
   status: "waiting" | "uploading" | "done" | "error";
   progress?: number;
   error?: string;
@@ -46,7 +48,7 @@ export default function SharePage() {
         setNotice(`A video was skipped because it's over ${MAX_VIDEO_MB} MB. Try a shorter clip.`);
         continue;
       }
-      next.push({ file, kind, preview: URL.createObjectURL(file), status: "waiting" });
+      next.push({ file, kind, preview: URL.createObjectURL(file), status: "waiting", uploadId: newUploadId() });
     }
     setItems((cur) => [...cur, ...next].slice(0, MAX_ITEMS));
   }
@@ -62,8 +64,12 @@ export default function SharePage() {
     setItems((cur) => cur.map((it, j) => (j === i ? { ...it, ...p } : it)));
   }
 
+  // a ref, not just state: two quick taps can both run before `busy` re-renders
+  const sendingRef = useRef(false);
+
   async function submit() {
-    if (!items.length || busy) return;
+    if (!items.length || busy || sendingRef.current) return;
+    sendingRef.current = true;
     setBusy(true);
     try {
       localStorage.setItem("guestName", name.trim());
@@ -79,9 +85,9 @@ export default function SharePage() {
       const msg = messageSent ? "" : message;
       try {
         if (it.kind === "video") {
-          await uploadVideo(it.file, name, msg, (p) => patch(i, { progress: p }));
+          await uploadVideo(it.file, name, msg, (p) => patch(i, { progress: p }), it.uploadId);
         } else {
-          await uploadImage(it.file, name, msg);
+          await uploadImage(it.file, name, msg, it.uploadId);
         }
         messageSent = true;
         patch(i, { status: "done" });
@@ -91,6 +97,7 @@ export default function SharePage() {
       }
     }
     if (messageSent) setMessage("");
+    sendingRef.current = false;
     setBusy(false);
     if (failures === 0) setDone(true);
   }
