@@ -19,3 +19,9 @@ export const portraits = pgTable("portraits", {
 });
 
 export type Portrait = typeof portraits.$inferSelect;
+
+// Admin-editable key/value settings (e.g. slideshow timing).
+export const settings = pgTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});

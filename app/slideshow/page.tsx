@@ -4,10 +4,10 @@ import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Candle } from "@/components/Candle";
 import { PortraitRotator } from "@/components/PortraitRotator";
+import { useSettings } from "@/components/useSettings";
 import type { PublicPost } from "@/lib/types";
 import { tribute } from "@/lib/tribute";
 
-const SLIDE_MS = 7000;
 const POLL_MS = 8000;
 const TRIBUTE_EVERY = 12;
 
@@ -23,6 +23,7 @@ export default function Slideshow() {
   const [count, setCount] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [url, setUrl] = useState("");
+  const slideMs = useSettings().slideSeconds * 1000;
 
   const postsRef = useRef<PublicPost[]>([]);
   const seenRef = useRef<Set<string> | null>(null);
@@ -94,9 +95,9 @@ export default function Slideshow() {
       } else {
         setSlides((cur) => [cur[cur.length - 1], s]);
       }
-    }, SLIDE_MS);
+    }, slideMs);
     return () => clearInterval(t);
-  }, [nextSlide]);
+  }, [nextSlide, slideMs]);
 
   // Keep the TV awake and hide the cursor/controls when idle.
   useEffect(() => {
@@ -143,7 +144,7 @@ export default function Slideshow() {
           className="absolute inset-0"
           style={i === slides.length - 1 ? { animation: "fadeIn 1.4s ease both" } : undefined}
         >
-          {s.kind === "photo" ? <PhotoSlide post={s.post} /> : <TributeSlide />}
+          {s.kind === "photo" ? <PhotoSlide post={s.post} slideMs={slideMs} /> : <TributeSlide />}
         </div>
       ))}
 
@@ -171,7 +172,7 @@ export default function Slideshow() {
   );
 }
 
-function PhotoSlide({ post }: { post: PublicPost }) {
+function PhotoSlide({ post, slideMs }: { post: PublicPost; slideMs: number }) {
   const src = `/api/image/${post.id}`;
   return (
     <>
@@ -184,7 +185,7 @@ function PhotoSlide({ post }: { post: PublicPost }) {
           src={src}
           alt=""
           className="max-h-full max-w-full rounded-md object-contain shadow-2xl"
-          style={{ animation: `kenburns ${SLIDE_MS + 1500}ms ease-out both` }}
+          style={{ animation: `kenburns ${slideMs + 1500}ms ease-out both` }}
         />
       </div>
       {(post.message || post.name) && (

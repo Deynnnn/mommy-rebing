@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { PortraitManager } from "@/components/PortraitManager";
+import { TimingSettings } from "@/components/TimingSettings";
 
 type AdminPost = {
   id: string;
@@ -110,6 +111,7 @@ export default function AdminPage() {
         </div>
       </div>
 
+      <TimingSettings adminKey={key} />
       <PortraitManager adminKey={key} />
 
       <h2 className="mt-8 font-serif text-2xl">Guest uploads</h2>

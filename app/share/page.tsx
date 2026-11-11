@@ -22,6 +22,7 @@ export default function SharePage() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     try {
@@ -116,6 +117,18 @@ export default function SharePage() {
       <h1 className="mt-4 font-serif text-3xl leading-tight">Share a photo of {tribute.nickname}</h1>
       <p className="mt-1 text-sm text-muted">Magbahagi ng larawan at alaala</p>
 
+      {/* Phones skip the camera when `multiple` is set, so the camera gets its own input. */}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          pick(e.target.files);
+          e.target.value = "";
+        }}
+      />
       <input
         ref={inputRef}
         type="file"
@@ -128,16 +141,31 @@ export default function SharePage() {
         }}
       />
 
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={busy}
-        className="mt-6 flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gold/50 bg-paper px-4 py-8 text-center"
-      >
-        <span className="text-3xl">📷</span>
-        <span className="mt-2 font-medium">{items.length ? "Add more photos" : "Choose or take photos"}</span>
-        <span className="mt-1 text-xs text-muted">You can pick several at once</span>
-      </button>
+      <div className="mt-6 grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => cameraRef.current?.click()}
+          disabled={busy}
+          className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gold/50 bg-paper px-3 py-7 text-center"
+        >
+          <span className="text-3xl">📷</span>
+          <span className="mt-2 font-medium">Take a photo</span>
+          <span className="mt-1 text-xs text-muted">Kumuha ng larawan</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+          className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gold/50 bg-paper px-3 py-7 text-center"
+        >
+          <span className="text-3xl">🖼️</span>
+          <span className="mt-2 font-medium">Choose from gallery</span>
+          <span className="mt-1 text-xs text-muted">Pick several at once</span>
+        </button>
+      </div>
+      {items.length > 0 && !busy && (
+        <p className="mt-2 text-center text-xs text-muted">You can add more with either button.</p>
+      )}
 
       {items.length > 0 && (
         <div className="mt-4 grid grid-cols-3 gap-2">

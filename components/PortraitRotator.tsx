@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { tribute } from "@/lib/tribute";
+import { useSettings } from "./useSettings";
 
-const ROTATE_MS = 5000;
 const REFRESH_MS = 30000;
 
 /**
@@ -13,6 +13,7 @@ const REFRESH_MS = 30000;
 export function PortraitRotator({ className = "", alt = tribute.name }: { className?: string; alt?: string }) {
   const [srcs, setSrcs] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
+  const rotateMs = useSettings().portraitSeconds * 1000;
 
   useEffect(() => {
     let alive = true;
@@ -39,9 +40,9 @@ export function PortraitRotator({ className = "", alt = tribute.name }: { classN
 
   useEffect(() => {
     if (srcs.length < 2) return;
-    const t = setInterval(() => setIndex((i) => (i + 1) % srcs.length), ROTATE_MS);
+    const t = setInterval(() => setIndex((i) => (i + 1) % srcs.length), rotateMs);
     return () => clearInterval(t);
-  }, [srcs.length]);
+  }, [srcs.length, rotateMs]);
 
   const list = srcs.length ? srcs : [tribute.portrait];
   const current = index % list.length;
