@@ -59,3 +59,37 @@ body {
   from { opacity: 1; transform: none; }
   to { opacity: 0; transform: translateY(4px) scale(0.98); }
 }
+
+/* Two stacked range inputs make the A–B loop slider: only the thumbs take clicks. */
+.loop-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  pointer-events: none;
+  margin: 0;
+  height: 100%;
+}
+.loop-thumb::-webkit-slider-runnable-track { background: transparent; height: 100%; }
+.loop-thumb::-moz-range-track { background: transparent; }
+.loop-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  width: 22px;
+  height: 22px;
+  margin-top: 5px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid #a8874f;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.4);
+  cursor: grab;
+}
+.loop-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid #a8874f;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.4);
+  cursor: grab;
+}

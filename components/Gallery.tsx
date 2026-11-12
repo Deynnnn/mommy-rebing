@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LoopVideoPlayer } from "@/components/LoopVideoPlayer";
 import type { PublicPost } from "@/lib/types";
 
 export function Gallery() {
@@ -75,14 +76,7 @@ export function Gallery() {
           onClick={() => setOpen(null)}
         >
           {open.mediaType === "video" ? (
-            <video
-              src={`/api/image/${open.id}`}
-              controls
-              autoPlay
-              playsInline
-              onClick={(e) => e.stopPropagation()}
-              className="max-h-[78dvh] max-w-full rounded"
-            />
+            <LoopVideoPlayer key={open.id} src={`/api/image/${open.id}`} />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={`/api/image/${open.id}`} alt="" className="max-h-[78dvh] max-w-full rounded object-contain" />
