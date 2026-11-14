@@ -14,6 +14,8 @@ const POLL_MS = 8000;
 const TRIBUTE_EVERY = 12;
 /** Skip a video if it makes no progress for this long (broken file, unsupported codec, network). */
 const VIDEO_STALL_MS = 20000;
+/** On phones the controls stay up a little longer after a tap or swipe. */
+const TOUCH_IDLE_MS = 4500;
 
 type Slide = { kind: "tribute"; key: string } | { kind: "post"; key: string; post: PublicPost };
 
@@ -29,6 +31,8 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
   const [showControls, setShowControls] = useState(true);
   const [url, setUrl] = useState("");
   const [soundBlocked, setSoundBlocked] = useState(false);
+  const [canFullscreen, setCanFullscreen] = useState(false);
+  const [timelineH, setTimelineH] = useState(0);
   const settings = useSettings();
   const slideMs = settings.slideSeconds * 1000;
   const wantSound = settings.videoSound === 1;
@@ -44,7 +48,11 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
 
   const current = slides[slides.length - 1];
 
-  useEffect(() => setUrl(shareUrl()), []);
+  useEffect(() => {
+    setUrl(shareUrl());
+    // iPhones can't make a page fullscreen, so don't offer a button that does nothing
+    setCanFullscreen(!!document.fullscreenEnabled);
+  }, []);
 
   // Poll for posts (in the admin's order); anything new jumps to the front of the queue.
   useEffect(() => {
@@ -171,6 +179,42 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
     [advance],
   );
 
+  // Show the controls and restart the countdown that hides them again.
+  const idleRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const poke = useCallback((ms = 3000) => {
+    setShowControls(true);
+    clearTimeout(idleRef.current);
+    idleRef.current = setTimeout(() => setShowControls(false), ms);
+  }, []);
+  const hideControls = useCallback(() => {
+    clearTimeout(idleRef.current);
+    setShowControls(false);
+  }, []);
+
+  // Phones: swipe left/right to browse, tap to show or hide the controls.
+  const touchRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    // leave the timeline, buttons and links to handle their own touches
+    const onChrome = (e.target as HTMLElement).closest("[data-chrome]");
+    touchRef.current = e.touches.length === 1 && !onChrome ? { x: t.clientX, y: t.clientY, t: Date.now() } : null;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const start = touchRef.current;
+    touchRef.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      step(dx < 0 ? 1 : -1);
+      poke(TOUCH_IDLE_MS);
+    } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && Date.now() - start.t < 500) {
+      if (showControls) hideControls();
+      else poke(TOUCH_IDLE_MS);
+    }
+  };
+
   // Keep the TV awake and hide the cursor/controls when idle.
   useEffect(() => {
     let lock: { release: () => Promise<void> } | null = null;
@@ -184,13 +228,12 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
     const onVis = () => document.visibilityState === "visible" && wake();
     document.addEventListener("visibilitychange", onVis);
 
-    let idle: ReturnType<typeof setTimeout>;
-    const onMove = () => {
-      setShowControls(true);
-      clearTimeout(idle);
-      idle = setTimeout(() => setShowControls(false), 3000);
+    // touches are handled by the tap/swipe handlers; this is for the mouse and keyboard
+    const onMove = (e: Event) => {
+      if (e instanceof PointerEvent && e.pointerType === "touch") return;
+      poke();
     };
-    onMove();
+    poke(matchMedia("(pointer: coarse)").matches ? TOUCH_IDLE_MS : 3000);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerdown", onMove);
     window.addEventListener("keydown", onMove);
@@ -199,10 +242,10 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerdown", onMove);
       window.removeEventListener("keydown", onMove);
-      clearTimeout(idle);
+      clearTimeout(idleRef.current);
       lock?.release().catch(() => {});
     };
-  }, []);
+  }, [poke]);
 
   const fullscreen = () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -214,10 +257,18 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <main
-      className="fixed inset-0 overflow-hidden bg-[#0d0b09] text-white"
-      style={{ cursor: showControls ? "default" : "none" }}
+      className="fixed inset-0 touch-manipulation select-none overflow-hidden bg-[#0d0b09] text-white"
+      style={
+        {
+          cursor: showControls ? "default" : "none",
+          // captions and the QR card ride up above the timeline while it is showing
+          "--chrome-b": showControls ? `${timelineH}px` : "0px",
+        } as React.CSSProperties
+      }
       // any click counts as the user gesture browsers require before playing sound
       onClick={() => setSoundBlocked(false)}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
     >
       {slides.map((s, i) => {
         const active = i === slides.length - 1;
@@ -255,11 +306,11 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
         onBlocked={onSoundBlocked}
       />
 
+      {/* On a phone the viewer is already holding the device, so a QR code is no use: link straight to sharing. */}
       {url && (
         <div
-          className="absolute right-6 z-30 flex items-center gap-4 rounded-2xl bg-black/55 p-3 pr-5 backdrop-blur transition-[bottom] duration-300"
-          // sit above the timeline while it is showing
-          style={{ bottom: showControls ? "10rem" : "1.5rem" }}
+          className="absolute right-6 z-30 flex items-center gap-4 rounded-2xl bg-black/55 p-3 pr-5 backdrop-blur transition-[bottom] duration-300 compact:hidden"
+          style={{ bottom: "calc(var(--chrome-b) + 1.5rem)" }}
         >
           <div className="rounded-lg bg-white p-2">
             <QRCodeSVG value={url} size={112} />
@@ -273,27 +324,62 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
       )}
 
       <div
-        className="absolute left-4 top-4 z-10 flex items-center gap-3 transition-opacity"
-        style={{ opacity: showControls || soundBlocked ? 1 : 0 }}
+        className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-2"
+        style={{
+          paddingTop: "max(1rem, env(safe-area-inset-top))",
+          paddingLeft: "max(1rem, env(safe-area-inset-left))",
+          paddingRight: "max(1rem, env(safe-area-inset-right))",
+        }}
       >
-        <button onClick={fullscreen} className="rounded-full bg-white/10 px-4 py-2 text-sm">
-          Toggle fullscreen
-        </button>
-        {soundBlocked && (wantSound || wantMusic) && (
-          <span className="rounded-full bg-black/60 px-4 py-2 text-sm">🔇 Click anywhere to turn on sound</span>
-        )}
+        <div
+          className="flex min-w-0 flex-wrap items-center gap-2 transition-opacity duration-300 compact:flex-col compact:items-start"
+          style={{ opacity: showControls || soundBlocked ? 1 : 0 }}
+        >
+          {canFullscreen && (
+            <button
+              data-chrome
+              onClick={fullscreen}
+              aria-label="Toggle fullscreen"
+              className="pointer-events-auto flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm backdrop-blur hover:bg-white/20 compact:h-10 compact:w-10 compact:justify-center compact:bg-black/45 compact:p-0"
+              style={{ pointerEvents: showControls ? "auto" : "none" }}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+              </svg>
+              <span className="compact:hidden">Toggle fullscreen</span>
+            </button>
+          )}
+          {soundBlocked && (wantSound || wantMusic) && (
+            <span className="rounded-full bg-black/60 px-4 py-2 text-sm backdrop-blur compact:px-3 compact:text-xs">
+              🔇 Tap anywhere to turn on sound
+            </span>
+          )}
+        </div>
+
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <a
+            data-chrome
+            href="/share"
+            className="pointer-events-auto hidden items-center gap-1.5 rounded-full bg-[#d9bf8c] px-4 py-2 text-sm font-medium text-[#1a1510] shadow-lg compact:flex"
+          >
+            <span aria-hidden className="text-base leading-none">＋</span> Share a memory
+          </a>
+          {paused && (
+            <button
+              data-chrome
+              onClick={() => setPaused(false)}
+              className="pointer-events-auto rounded-full bg-black/60 px-4 py-2 text-sm backdrop-blur compact:text-xs"
+            >
+              ⏸ Paused · tap to play
+            </button>
+          )}
+        </div>
       </div>
 
-      {paused && (
-        <button
-          onClick={() => setPaused(false)}
-          className="absolute right-4 top-4 z-10 rounded-full bg-black/60 px-4 py-2 text-sm backdrop-blur"
-        >
-          ⏸ Paused · tap to play
-        </button>
-      )}
-
       <Timeline
+        onHeight={setTimelineH}
+        // keep the bar up while someone is scrolling through it with a finger
+        onActivity={() => poke(TOUCH_IDLE_MS)}
         posts={posts}
         currentId={current.kind === "post" ? current.post.id : null}
         visible={showControls}
@@ -309,9 +395,16 @@ export function Slideshow({ isAdmin }: { isAdmin: boolean }) {
 function Caption({ post }: { post: PublicPost }) {
   if (!post.message && !post.name) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-12 pb-8 pt-24 pr-[22rem]">
-      {post.message && <p className="line-clamp-3 font-serif text-4xl leading-snug">“{post.message}”</p>}
-      {post.name && <p className="mt-3 text-xl text-white/75">— {post.name}</p>}
+    <div
+      className="pointer-events-none absolute inset-x-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-12 pb-8 pt-24 pr-[22rem] transition-[bottom] duration-300 compact:px-5 compact:pb-[max(1.25rem,env(safe-area-inset-bottom))] compact:pt-16"
+      style={{ bottom: "var(--chrome-b, 0px)" }}
+    >
+      {post.message && (
+        <p className="line-clamp-3 font-serif text-4xl leading-snug compact:line-clamp-4 compact:text-[1.4rem] compact:leading-snug">
+          “{post.message}”
+        </p>
+      )}
+      {post.name && <p className="mt-3 text-xl text-white/75 compact:mt-1.5 compact:text-sm">— {post.name}</p>}
     </div>
   );
 }
@@ -323,7 +416,7 @@ function PhotoSlide({ post, slideMs, paused }: { post: PublicPost; slideMs: numb
       {/* blurred backdrop fills the screen behind portrait/landscape photos */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={src} alt="" className="absolute inset-0 h-full w-full scale-110 object-cover opacity-40 blur-2xl" />
-      <div className="absolute inset-0 flex items-center justify-center p-10 pb-40">
+      <div className="absolute inset-0 flex items-center justify-center p-10 pb-40 compact:px-2 compact:pb-24 compact:pt-16">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
@@ -401,7 +494,7 @@ function VideoSlide({
 
   return (
     <>
-      <div className="absolute inset-0 flex items-center justify-center bg-black p-6 pb-36">
+      <div className="absolute inset-0 flex items-center justify-center bg-black p-6 pb-36 compact:px-0 compact:pb-24 compact:pt-16">
         <video
           ref={ref}
           src={`/api/image/${post.id}`}
@@ -419,19 +512,24 @@ function VideoSlide({
 
 function TributeSlide() {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-10 pb-24 text-center">
-      <p className="text-sm uppercase tracking-[0.4em] text-white/60">In Loving Memory</p>
+    <div className="flex h-full flex-col items-center justify-center px-10 pb-24 text-center compact:px-6 compact:pb-20 compact:pt-12 short:pb-6 short:pt-6">
+      <p className="text-sm uppercase tracking-[0.4em] text-white/60 compact:text-xs compact:tracking-[0.3em]">
+        In Loving Memory
+      </p>
       <PortraitRotator
         alt=""
-        className="mt-8 h-[38vh] w-[38vh] border-4 border-[#a8874f]/60 shadow-2xl"
+        // min() keeps it a circle on narrow screens instead of squashing into an oval
+        className="mt-8 h-[38vh] w-[38vh] shrink-0 border-4 border-[#a8874f]/60 shadow-2xl compact:mt-5 compact:h-[min(34vh,64vw)] compact:w-[min(34vh,64vw)] compact:border-[3px] short:mt-3"
       />
-      <h1 className="mt-8 font-serif text-6xl">{tribute.name}</h1>
-      <p className="mt-2 font-serif text-3xl italic text-[#d9bf8c]">“{tribute.nickname}”</p>
-      <p className="mt-3 text-xl text-white/70">
-        {tribute.born} — {tribute.died}
+      <h1 className="mt-8 text-balance font-serif text-6xl compact:mt-5 compact:text-[2.5rem] compact:leading-[1.05] short:mt-3 short:text-3xl">
+        {tribute.name}
+      </h1>
+      <p className="mt-2 font-serif text-3xl italic text-[#d9bf8c] compact:text-2xl short:text-xl">“{tribute.nickname}”</p>
+      <p className="mt-3 text-xl text-white/70 compact:mt-2 compact:text-sm">
+        <span className="whitespace-nowrap">{tribute.born}</span> — <span className="whitespace-nowrap">{tribute.died}</span>
       </p>
-      <div className="mt-6">
-        <Candle className="h-14 w-8" />
+      <div className="mt-6 compact:mt-4 short:hidden">
+        <Candle className="h-14 w-8 compact:h-11 compact:w-6" />
       </div>
     </div>
   );
@@ -453,6 +551,8 @@ function Timeline({
   onTogglePause,
   onPick,
   onStep,
+  onHeight,
+  onActivity,
 }: {
   posts: PublicPost[];
   currentId: string | null;
@@ -461,8 +561,21 @@ function Timeline({
   onTogglePause: () => void;
   onPick: (p: PublicPost) => void;
   onStep: (dir: 1 | -1) => void;
+  onHeight: (px: number) => void;
+  onActivity: () => void;
 }) {
+  const barRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
+
+  // Tell the slideshow how tall the bar is so captions can sit just above it.
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => onHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [onHeight]);
+  const currentIndex = currentId ? posts.findIndex((p) => p.id === currentId) : -1;
   const itemRefs = useRef(new Map<string, HTMLButtonElement>());
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
@@ -496,42 +609,57 @@ function Timeline({
 
   return (
     <div
-      className="absolute inset-x-0 bottom-0 z-20 bg-black/90 pt-4 backdrop-blur transition-transform duration-300"
-      style={{ transform: visible ? "translateY(0)" : "translateY(100%)" }}
+      ref={barRef}
+      data-chrome
+      className="absolute inset-x-0 bottom-0 z-20 bg-black/90 pt-4 backdrop-blur transition-transform duration-300 compact:pt-3"
+      style={{
+        transform: visible ? "translateY(0)" : "translateY(100%)",
+        // nothing to tap while it is hidden (it would swallow taps meant for the slide)
+        pointerEvents: visible ? "auto" : "none",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingLeft: "env(safe-area-inset-left)",
+        paddingRight: "env(safe-area-inset-right)",
+      }}
     >
-      <div className="flex items-center gap-4 px-5 pb-5">
-        <div className="flex shrink-0 items-center gap-2">
+      <div className="flex items-center gap-4 px-5 pb-5 compact:gap-3 compact:px-3 compact:pb-3 max-md:flex-col max-md:items-stretch">
+        <div className="flex shrink-0 items-center gap-2 max-md:justify-center max-md:gap-5">
+          <span className="hidden w-14 text-right text-xs tabular-nums text-white/50 max-md:block">
+            {currentIndex >= 0 ? `${currentIndex + 1} / ${posts.length}` : ""}
+          </span>
           <button
             onClick={() => onStep(-1)}
             aria-label="Previous photo"
-            className="h-11 w-11 rounded-full bg-white/10 text-lg hover:bg-white/20"
+            className="h-11 w-11 rounded-full bg-white/10 text-lg hover:bg-white/20 active:bg-white/25 compact:h-10 compact:w-10"
           >
             ⏮
           </button>
           <button
             onClick={onTogglePause}
             aria-label={paused ? "Play" : "Pause"}
-            className="h-14 w-14 rounded-full bg-white text-2xl text-black shadow-lg"
+            className="h-14 w-14 rounded-full bg-white text-2xl text-black shadow-lg active:scale-95 compact:h-12 compact:w-12 compact:text-xl"
           >
             {paused ? "▶" : "⏸"}
           </button>
           <button
             onClick={() => onStep(1)}
             aria-label="Next photo"
-            className="h-11 w-11 rounded-full bg-white/10 text-lg hover:bg-white/20"
+            className="h-11 w-11 rounded-full bg-white/10 text-lg hover:bg-white/20 active:bg-white/25 compact:h-10 compact:w-10"
           >
             ⏭
           </button>
+          {/* balances the counter so the buttons stay centred */}
+          <span className="hidden w-14 max-md:block" />
         </div>
 
-        <div className="h-12 w-px shrink-0 bg-white/15" />
+        <div className="h-12 w-px shrink-0 bg-white/15 compact:hidden" />
 
         <Chevron dir="left" disabled={!canLeft} onClick={() => page(-1)} />
 
         <div
           ref={stripRef}
           onScroll={updateArrows}
-          className="flex min-w-0 flex-1 gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onTouchMove={onActivity}
+          className="flex min-w-0 flex-1 gap-3 overflow-x-auto overscroll-x-contain [scrollbar-width:none] compact:gap-2 [&::-webkit-scrollbar]:hidden"
         >
           {posts.length === 0 && <p className="self-center text-sm text-white/60">No uploads yet.</p>}
           {posts.map((p) => {
@@ -545,10 +673,10 @@ function Timeline({
                 }}
                 onClick={() => onPick(p)}
                 title={p.name ? `${p.name} · ${shownAt(p.createdAt)}` : shownAt(p.createdAt)}
-                className={`w-28 shrink-0 p-0.5 text-left transition-opacity ${on ? "" : "opacity-60 hover:opacity-100"}`}
+                className={`w-28 shrink-0 p-0.5 text-left transition-opacity compact:w-[5.9rem] ${on ? "" : "opacity-60 hover:opacity-100"}`}
               >
                 <div
-                  className={`relative h-16 w-full overflow-hidden rounded-lg bg-white/10 ring-2 ${
+                  className={`relative h-16 w-full overflow-hidden rounded-lg bg-white/10 ring-2 compact:h-12 ${
                     on ? "ring-[#d9bf8c]" : "ring-white/0"
                   }`}
                 >
@@ -562,11 +690,11 @@ function Timeline({
                   )}
                 </div>
                 <p
-                  className={`mt-1.5 truncate text-xs font-medium tabular-nums ${on ? "text-[#d9bf8c]" : "text-white/85"}`}
+                  className={`mt-1.5 truncate text-xs font-medium tabular-nums compact:text-[11px] ${on ? "text-[#d9bf8c]" : "text-white/85"}`}
                 >
                   {shownAt(p.createdAt)}
                 </p>
-                <p className="truncate text-[11px] text-white/50">{p.name || " "}</p>
+                <p className="truncate text-[11px] text-white/50 compact:hidden">{p.name || " "}</p>
               </button>
             );
           })}
@@ -584,7 +712,7 @@ function Chevron({ dir, disabled, onClick }: { dir: "left" | "right"; disabled: 
       onClick={onClick}
       disabled={disabled}
       aria-label={dir === "left" ? "Scroll timeline left" : "Scroll timeline right"}
-      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-25 disabled:hover:bg-white/10"
+      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-25 disabled:hover:bg-white/10 compact:hidden"
     >
       <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
         <path d={dir === "left" ? "M15 18l-6-6 6-6" : "M9 6l6 6-6 6"} />

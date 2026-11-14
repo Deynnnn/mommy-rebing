@@ -1,3 +1,4 @@
+import type { Viewport } from "next";
 import { cookies } from "next/headers";
 import { Slideshow } from "@/components/Slideshow";
 import { SlideshowLocked } from "@/components/SlideshowLocked";
@@ -5,6 +6,14 @@ import { isValidSession, SESSION_COOKIE } from "@/lib/admin";
 import { readSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
+
+// Dark browser chrome and edge-to-edge on notched phones (the slideshow pads for the safe areas itself).
+export const viewport: Viewport = {
+  themeColor: "#0d0b09",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 /** The TV slideshow. When public viewing is off, only signed-in admin devices can open it. */
 export default async function SlideshowPage() {

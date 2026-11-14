@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* Phones and small tablets: narrow portrait screens or short landscape ones. */
+@custom-variant compact {
+  @media (max-width: 767px) {
+    @slot;
+  }
+  @media (max-height: 520px) {
+    @slot;
+  }
+}
+/* Phones held sideways. */
+@custom-variant short (@media (max-height: 520px));
+
 :root {
   --cream: #faf6ef;
   --paper: #fffdf9;

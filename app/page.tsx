@@ -1,10 +1,20 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { Candle } from "@/components/Candle";
 import { Gallery } from "@/components/Gallery";
 import { PortraitRotator } from "@/components/PortraitRotator";
+import { isValidSession, SESSION_COOKIE } from "@/lib/admin";
+import { readSettings } from "@/lib/settings";
 import { tribute } from "@/lib/tribute";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  // Only offer the slideshow to people who can open it (same rule as /slideshow).
+  const isAdmin = isValidSession((await cookies()).get(SESSION_COOKIE)?.value);
+  const settings = isAdmin ? null : await readSettings().catch(() => null);
+  const canWatch = isAdmin || !settings || settings.slideshowPublic === 1;
+
   return (
     <main className="min-h-dvh">
       <section className="mx-auto flex max-w-2xl flex-col items-center px-5 pb-10 pt-12 text-center">
@@ -34,6 +44,18 @@ export default function Home() {
           Share a photo &amp; memory
         </Link>
         <p className="mt-2 text-sm text-muted">Magbahagi ng larawan at alaala</p>
+
+        {canWatch && (
+          <Link
+            href="/slideshow"
+            className="mt-5 inline-flex items-center gap-2.5 rounded-full border border-ink/25 bg-paper px-6 py-3 text-sm font-medium text-ink transition hover:border-ink/50 active:scale-[0.98]"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+              <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />
+            </svg>
+            Watch the slideshow
+          </Link>
+        )}
       </section>
 
       <section className="mx-auto max-w-5xl px-4 pb-16">
